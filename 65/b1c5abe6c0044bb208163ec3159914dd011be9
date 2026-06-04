@@ -1,0 +1,29 @@
+crates/oxc_minifier/src/peephole/remove_unused_declaration.rs
+  s_29351da95964bc::t_f32cb0a8f204ad 115,119-125
+  s_29351da95964bc::t_64d7654e3a2f26 91,95-101
+crates/oxc_minifier/src/peephole/mod.rs
+  s_29351da95964bc::t_cbd55fdb1bb1f6 169-170
+crates/oxc_minifier/src/state.rs
+  s_29351da95964bc::t_e1f35c05a468f3 37-41
+  s_29351da95964bc::t_7995a10534c233 66-67
+crates/oxc_minifier/src/peephole/direct_eval.rs
+  s_29351da95964bc::t_c15e0ee97e624b 2,5,8,39-40,43-81,83,88,97-151,153,160,163-167,170-171,191-192,197,204-205
+crates/oxc_minifier/tests/peephole/remove_unused_declaration.rs
+  s_29351da95964bc::t_e2284d15ae936b 211-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "65b1c5abe6c0044bb208163ec3159914dd011be9",
+  "prompts": {},
+  "sessions": {
+    "s_29351da95964bc": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "d322138e-0973-4950-85a1-0d911bbac798",
+        "model": "default"
+      },
+      "human_author": "sh3xu <s43khu@gmail.com>"
+    }
+  }
+}
