@@ -1,0 +1,27 @@
+crates/oxc_minifier/src/peephole/remove_unused_declaration.rs
+  s_29351da95964bc::t_ed9a3b5ecb20ad 91,94-101
+  s_29351da95964bc::t_000571c800940e 115,118-125
+crates/oxc_minifier/src/peephole/mod.rs
+  s_29351da95964bc::t_70f57600b6031f 169
+crates/oxc_minifier/src/peephole/direct_eval.rs
+  s_29351da95964bc::t_2964bf3b851299 4-5,36,39-41,47,49,53,55,61,73-75,81-83,92-94,100-102,113-115,121-123,139,144,162,169,176-178
+crates/oxc_minifier/src/state.rs
+  s_29351da95964bc::t_30214b9f9c1b4d 63
+  s_29351da95964bc::t_d6be1410eb7830 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "4be127902868b8bbf457fdd1845e75c26a8f1a82",
+  "prompts": {},
+  "sessions": {
+    "s_29351da95964bc": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "d322138e-0973-4950-85a1-0d911bbac798",
+        "model": "default"
+      },
+      "human_author": "sh3xu <s43khu@gmail.com>"
+    }
+  }
+}
