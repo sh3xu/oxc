@@ -1,0 +1,33 @@
+crates/oxc_linter/src/rules/react/jsx_no_script_url.rs
+  s_6c7b53801e7a15::t_eff90af2963048 28-30
+  s_6c7b53801e7a15::t_8de926e2dad4c5 46-48
+  s_6c7b53801e7a15::t_67b3f960a66bb2 3,14,49-61,69,92,116-118,120-123,127-130,132-133,139,293-311
+  s_6c7b53801e7a15::t_b1b4b7e87c7493 108,119
+  s_6c7b53801e7a15::t_228765423f6668 27,32-35,39
+  s_6c7b53801e7a15::t_59cad61ea0231b 131
+npm/oxlint/configuration_schema.json
+  s_6c7b53801e7a15::t_3d1fb697cf4240 1
+crates/oxc_linter/src/utils/schemars.rs
+  s_6c7b53801e7a15::t_310b86a2b9e670 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "945f3277cdc710bf9e2e0402a211a3fbc2fcc09a",
+  "prompts": {},
+  "humans": {
+    "h_54cccc4af8e4fc": {
+      "author": "sh3xu <s43khu@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_6c7b53801e7a15": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1e5b1907-4f08-4def-ac6d-8dbb647766eb",
+        "model": "default"
+      },
+      "human_author": "sh3xu <s43khu@gmail.com>"
+    }
+  }
+}
