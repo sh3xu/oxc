@@ -1279,7 +1279,6 @@ export interface DummyRuleMap {
     | (
         | [AllowWarnDeny, JsxNoScriptUrlComponent[]]
         | [AllowWarnDeny, JsxNoScriptUrlComponent[], JsxNoScriptUrlOptions]
-        | [AllowWarnDeny, JsxNoScriptUrlComponent]
         | [AllowWarnDeny, JsxNoScriptUrlOptions]
       );
   "react/jsx-no-target-blank"?: RuleNoConfig | [AllowWarnDeny, JsxNoTargetBlank];
@@ -1736,6 +1735,10 @@ export interface ArrayCallbackReturn {
   checkForEach?: boolean;
 }
 export interface ArrowBodyStyleConfig {
+  /**
+   * Requires braces and an explicit return for object literals. This option only applies when
+   * the first option is `"as-needed"`.
+   */
   requireReturnForObjectLiteral?: boolean;
 }
 export interface CommentConfigJson {

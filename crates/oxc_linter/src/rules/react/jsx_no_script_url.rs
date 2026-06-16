@@ -1,6 +1,13 @@
 use lazy_regex::{Lazy, Regex, lazy_regex};
-use schemars::JsonSchema;
+use rustc_hash::FxHashMap;
+use schemars::{
+    JsonSchema, SchemaGenerator,
+    schema::{
+        ArrayValidation, InstanceType, Schema, SchemaObject, SingleOrVec, SubschemaValidation,
+    },
+};
 use serde::Deserialize;
+use serde_json::Value;
 
 use oxc_ast::{AstKind, ast::JSXAttributeItem};
 use oxc_diagnostics::OxcDiagnostic;
@@ -24,15 +31,87 @@ static JS_SCRIPT_REGEX: Lazy<Regex> = lazy_regex!(
     r"(j|J)[\r\n\t]*(a|A)[\r\n\t]*(v|V)[\r\n\t]*(a|A)[\r\n\t]*(s|S)[\r\n\t]*(c|C)[\r\n\t]*(r|R)[\r\n\t]*(i|I)[\r\n\t]*(p|P)[\r\n\t]*(t|T)[\r\n\t]*:"
 );
 
-#[derive(Debug, Clone)]
-pub struct JsxNoScriptUrl(
-    Box<MixedTupleRuleConfig<Vec<JsxNoScriptUrlComponent>, JsxNoScriptUrlOptions>>,
+#[derive(Debug, Default, Clone)]
+pub struct JsxNoScriptUrl(Box<JsxNoScriptUrlConfig>);
+
+#[derive(Debug, Default, Clone)]
+pub struct JsxNoScriptUrlConfig {
+    include_from_settings: bool,
+    components: FxHashMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(transparent)]
+struct JsxNoScriptUrlComponents(Vec<JsxNoScriptUrlComponent>);
+
+impl JsxNoScriptUrlComponents {
+    fn into_map(self) -> FxHashMap<String, Vec<String>> {
+        self.0.into_iter().map(|component| (component.name, component.props)).collect()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct JsxNoScriptUrlComponent {
+    /// Component name.
+    name: String,
+    /// List of properties that should be validated.
+    props: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+struct JsxNoScriptUrlOptions {
+    /// Whether to include components from settings.
+    include_from_settings: bool,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+struct JsxNoScriptUrlRuleConfig(
+    MixedTupleRuleConfig<JsxNoScriptUrlComponents, JsxNoScriptUrlOptions>,
 );
 
-impl Default for JsxNoScriptUrl {
-    fn default() -> Self {
-        Self(Box::default())
+impl JsonSchema for JsxNoScriptUrlRuleConfig {
+    fn schema_name() -> String {
+        "JsxNoScriptUrlRuleConfig".to_string()
     }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(r#gen: &mut SchemaGenerator) -> Schema {
+        let components = r#gen.subschema_for::<Vec<JsxNoScriptUrlComponent>>();
+        let options = r#gen.subschema_for::<JsxNoScriptUrlOptions>();
+
+        SchemaObject {
+            subschemas: Some(Box::new(SubschemaValidation {
+                any_of: Some(vec![
+                    config_tuple_schema(vec![components, options.clone()], 1),
+                    options,
+                ]),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+        .into()
+    }
+}
+
+fn config_tuple_schema(items: Vec<Schema>, min_items: u32) -> Schema {
+    let max_items = u32::try_from(items.len()).expect("rule config tuple should fit in u32");
+
+    SchemaObject {
+        instance_type: Some(InstanceType::Array.into()),
+        array: Some(Box::new(ArrayValidation {
+            items: Some(SingleOrVec::Vec(items)),
+            min_items: Some(min_items),
+            max_items: Some(max_items),
+            ..Default::default()
+        })),
+        ..Default::default()
+    }
+    .into()
 }
 
 impl std::ops::Deref for JsxNoScriptUrl {
@@ -89,7 +168,7 @@ declare_oxc_lint!(
     react,
     suspicious,
     pending,
-    config = MixedTupleRuleConfig<Vec<JsxNoScriptUrlComponent>, JsxNoScriptUrlOptions>,
+    config = JsxNoScriptUrlRuleConfig,
     version = "0.13.2",
     short_description = "Disallow usage of `javascript:` URLs.",
 );
@@ -169,6 +248,16 @@ impl Rule for JsxNoScriptUrl {
                 }
             }
         }
+    }
+
+    fn from_configuration(value: Value) -> Result<Self, serde_json::error::Error> {
+        let JsxNoScriptUrlRuleConfig(MixedTupleRuleConfig(components, options)) =
+            serde_json::from_value::<JsxNoScriptUrlRuleConfig>(value)?;
+
+        Ok(Self(Box::new(JsxNoScriptUrlConfig {
+            include_from_settings: options.include_from_settings,
+            components: components.into_map(),
+        })))
     }
 
     fn should_run(&self, ctx: &ContextHost) -> bool {
