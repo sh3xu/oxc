@@ -1,7 +1,6 @@
 use lazy_regex::{Lazy, Regex, lazy_regex};
-use rustc_hash::FxHashMap;
 use schemars::JsonSchema;
-use serde_json::Value;
+use serde::Deserialize;
 
 use oxc_ast::{AstKind, ast::JSXAttributeItem};
 use oxc_diagnostics::OxcDiagnostic;
@@ -12,7 +11,7 @@ use oxc_str::CompactStr;
 use crate::{
     AstNode,
     context::{ContextHost, LintContext},
-    rule::Rule,
+    rule::{MixedTupleRuleConfig, Rule},
 };
 
 fn jsx_no_script_url_diagnostic(span: Span) -> OxcDiagnostic {
@@ -25,24 +24,39 @@ static JS_SCRIPT_REGEX: Lazy<Regex> = lazy_regex!(
     r"(j|J)[\r\n\t]*(a|A)[\r\n\t]*(v|V)[\r\n\t]*(a|A)[\r\n\t]*(s|S)[\r\n\t]*(c|C)[\r\n\t]*(r|R)[\r\n\t]*(i|I)[\r\n\t]*(p|P)[\r\n\t]*(t|T)[\r\n\t]*:"
 );
 
-#[derive(Debug, Default, Clone)]
-pub struct JsxNoScriptUrl(Box<JsxNoScriptUrlConfig>);
+#[derive(Debug, Clone)]
+pub struct JsxNoScriptUrl(
+    Box<MixedTupleRuleConfig<Vec<JsxNoScriptUrlComponent>, JsxNoScriptUrlOptions>>,
+);
 
-#[derive(Debug, Default, Clone, JsonSchema)]
-#[serde(rename_all = "camelCase", default)]
-pub struct JsxNoScriptUrlConfig {
-    /// Whether to include components from settings.
-    include_from_settings: bool,
-    /// Additional components to check.
-    components: FxHashMap<String, Vec<String>>,
+impl Default for JsxNoScriptUrl {
+    fn default() -> Self {
+        Self(Box::default())
+    }
 }
 
 impl std::ops::Deref for JsxNoScriptUrl {
-    type Target = JsxNoScriptUrlConfig;
+    type Target = MixedTupleRuleConfig<Vec<JsxNoScriptUrlComponent>, JsxNoScriptUrlOptions>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct JsxNoScriptUrlComponent {
+    /// Component name.
+    name: String,
+    /// List of properties that should be validated.
+    props: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct JsxNoScriptUrlOptions {
+    /// Whether to include components from settings.
+    include_from_settings: bool,
 }
 
 declare_oxc_lint!(
@@ -52,7 +66,7 @@ declare_oxc_lint!(
     ///
     /// ### Why is this bad?
     ///
-    /// URLs starting with `javascript:` are a dangerous attack surface because it’s easy to accidentally
+    /// URLs starting with `javascript:` are a dangerous attack surface because it's easy to accidentally
     /// include unsanitized output in a tag like `<a href>` and create a security hole.
     ///
     /// Starting in React 16.9, any URLs starting with `javascript:` log a warning.
@@ -75,7 +89,7 @@ declare_oxc_lint!(
     react,
     suspicious,
     pending,
-    config = JsxNoScriptUrlConfig,
+    config = MixedTupleRuleConfig<Vec<JsxNoScriptUrlComponent>, JsxNoScriptUrlOptions>,
     version = "0.13.2",
     short_description = "Disallow usage of `javascript:` URLs.",
 );
@@ -91,7 +105,7 @@ fn is_link_attribute(tag_name: &str, prop_value_literal: String, ctx: &LintConte
 
 impl JsxNoScriptUrl {
     fn is_link_tag(&self, tag_name: &str, ctx: &LintContext) -> bool {
-        if !self.include_from_settings {
+        if !self.0.1.include_from_settings {
             return tag_name == "a";
         }
         if tag_name == "a" {
@@ -99,15 +113,30 @@ impl JsxNoScriptUrl {
         }
         ctx.settings().react.get_link_component_attrs(tag_name).is_some()
     }
+
+    fn component_props(&self, component_name: &str) -> Option<&[String]> {
+        self.0
+            .0
+            .iter()
+            .find(|component| component.name == component_name)
+            .map(|component| component.props.as_slice())
+    }
 }
 
 impl Rule for JsxNoScriptUrl {
+    fn from_configuration(value: serde_json::Value) -> Result<Self, serde_json::error::Error> {
+        serde_json::from_value::<
+            MixedTupleRuleConfig<Vec<JsxNoScriptUrlComponent>, JsxNoScriptUrlOptions>,
+        >(value)
+        .map(|config| Self(Box::new(config)))
+    }
+
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
         if let AstKind::JSXOpeningElement(element) = node.kind() {
             let Some(component_name) = element.name.get_identifier_name() else {
                 return;
             };
-            if let Some(link_props) = self.components.get(component_name.as_str()) {
+            if let Some(link_props) = self.component_props(component_name.as_str()) {
                 for jsx_attribute in &element.attributes {
                     if let JSXAttributeItem::Attribute(attr) = jsx_attribute {
                         let Some(prop_value) = &attr.value else {
@@ -139,38 +168,6 @@ impl Rule for JsxNoScriptUrl {
                     }
                 }
             }
-        }
-    }
-
-    fn from_configuration(value: Value) -> Result<Self, serde_json::error::Error> {
-        let mut components: FxHashMap<String, Vec<String>> = FxHashMap::default();
-        match value.get(0).and_then(Value::as_array) {
-            Some(arr) => {
-                for component in arr {
-                    let name =
-                        component.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-                    let props =
-                        component.get("props").and_then(Value::as_array).map_or(vec![], |array| {
-                            array
-                                .iter()
-                                .map(|prop| prop.as_str().map_or(String::new(), String::from))
-                                .collect::<Vec<String>>()
-                        });
-                    components.insert(name, props);
-                }
-                Ok(Self(Box::new(JsxNoScriptUrlConfig {
-                    include_from_settings: value.get(1).is_some_and(|conf| {
-                        conf.get("includeFromSettings").and_then(Value::as_bool).is_some_and(|v| v)
-                    }),
-                    components,
-                })))
-            }
-            _ => Ok(Self(Box::new(JsxNoScriptUrlConfig {
-                include_from_settings: value.get(0).is_some_and(|conf| {
-                    conf.get("includeFromSettings").and_then(Value::as_bool).is_some_and(|v| v)
-                }),
-                components: FxHashMap::default(),
-            }))),
         }
     }
 
@@ -292,4 +289,23 @@ v	ascript:"></a>"#,
     ];
 
     Tester::new(JsxNoScriptUrl::NAME, JsxNoScriptUrl::PLUGIN, pass, fail).test_and_snapshot();
+}
+
+#[test]
+fn invalid_configs_error_in_from_configuration() {
+    let unknown_field = serde_json::json!([{ "includeFromSettings": true, "unknown": true }]);
+    assert!(JsxNoScriptUrl::from_configuration(unknown_field).is_err());
+
+    let unknown_component_field =
+        serde_json::json!([[{ "name": "Foo", "props": ["href"], "extra": true }]]);
+    assert!(JsxNoScriptUrl::from_configuration(unknown_component_field).is_err());
+
+    let wrong_type = serde_json::json!([{ "includeFromSettings": "yes" }]);
+    assert!(JsxNoScriptUrl::from_configuration(wrong_type).is_err());
+
+    let valid_components = serde_json::json!([[{ "name": "Foo", "props": ["href"] }]]);
+    assert!(JsxNoScriptUrl::from_configuration(valid_components).is_ok());
+
+    let valid_options = serde_json::json!([{ "includeFromSettings": true }]);
+    assert!(JsxNoScriptUrl::from_configuration(valid_options).is_ok());
 }

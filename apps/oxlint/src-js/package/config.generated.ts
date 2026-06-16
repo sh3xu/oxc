@@ -1274,7 +1274,14 @@ export interface DummyRuleMap {
   "react/jsx-no-constructed-context-values"?: RuleNoConfig;
   "react/jsx-no-duplicate-props"?: RuleNoConfig;
   "react/jsx-no-literals"?: RuleNoConfig | [AllowWarnDeny, JsxNoLiteralsConfig];
-  "react/jsx-no-script-url"?: DummyRule;
+  "react/jsx-no-script-url"?:
+    | RuleNoConfig
+    | (
+        | [AllowWarnDeny, JsxNoScriptUrlComponent[]]
+        | [AllowWarnDeny, JsxNoScriptUrlComponent[], JsxNoScriptUrlOptions]
+        | [AllowWarnDeny, JsxNoScriptUrlComponent]
+        | [AllowWarnDeny, JsxNoScriptUrlOptions]
+      );
   "react/jsx-no-target-blank"?: RuleNoConfig | [AllowWarnDeny, JsxNoTargetBlank];
   "react/jsx-no-undef"?: RuleNoConfig;
   "react/jsx-no-useless-fragment"?: RuleNoConfig | [AllowWarnDeny, JsxNoUselessFragment];
@@ -3901,7 +3908,7 @@ export interface PreferPromiseRejectErrors {
 }
 export interface PreferRegexLiteralsConfig {
   /**
-   * By default, this rule doesn’t check when a regex literal is unnecessarily wrapped in a `RegExp` constructor call.
+   * By default, this rule doesnÔÇÖt check when a regex literal is unnecessarily wrapped in a `RegExp` constructor call.
    * When the option `disallowRedundantWrapping` is set to `true`, the rule will also disallow such unnecessary patterns.
    *
    * Examples of **incorrect** code for `{ "disallowRedundantWrapping": true }`:
@@ -4432,6 +4439,22 @@ export interface ElementOverrideOptions {
    */
   restrictedAttributes?: string[];
 }
+export interface JsxNoScriptUrlComponent {
+  /**
+   * Component name.
+   */
+  name: string;
+  /**
+   * List of properties that should be validated.
+   */
+  props: string[];
+}
+export interface JsxNoScriptUrlOptions {
+  /**
+   * Whether to include components from settings.
+   */
+  includeFromSettings?: boolean;
+}
 export interface JsxNoTargetBlank {
   /**
    * Whether to allow referrers.
@@ -4556,7 +4579,7 @@ export interface OnlyExportComponentsConfig {
   /**
    * Allow exporting primitive constants (string/number/boolean/template literal)
    * alongside component exports without triggering a violation. Recommended when your
-   * bundler’s Fast Refresh integration supports this (enabled by the plugin’s `vite`
+   * bundlerÔÇÖs Fast Refresh integration supports this (enabled by the pluginÔÇÖs `vite`
    * preset).
    *
    * ```jsx
@@ -4600,7 +4623,7 @@ export interface PreferFunctionComponent {
 }
 export interface ReactCompilerConfig {
   /**
-   * Also report compiler bail-outs — places where React Compiler skipped a
+   * Also report compiler bail-outs ÔÇö places where React Compiler skipped a
    * component or hook (for example because of unsupported syntax) without
    * finding a rule violation. These do not indicate incorrect code, only
    * code that the compiler declined to optimize.
@@ -6210,7 +6233,7 @@ export interface OxlintPluginSettings {
  */
 export interface JestPluginSettings {
   /**
-   * Jest version — accepts a number (`29`) or a semver string (`"29.1.0"` or `"v29.1.0"`),
+   * Jest version ÔÇö accepts a number (`29`) or a semver string (`"29.1.0"` or `"v29.1.0"`),
    * storing only the major version.
    * ::: warning
    * Using this config will override the `no-deprecated-functions` config set.
