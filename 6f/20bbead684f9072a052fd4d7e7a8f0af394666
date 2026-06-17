@@ -1,0 +1,30 @@
+crates/oxc_linter/src/rules/unicorn/no_return_array_push.rs
+  s_2587d825ab4702::t_751e8dff25179c 1-281,283-316,318,320-329,332-369,382-387
+  s_2587d825ab4702::t_068581aa7a4075 370-381
+  s_2587d825ab4702::t_302e5b8130e6e8 317,319
+  s_2587d825ab4702::t_5c051d92d9564d 330-331
+  s_2587d825ab4702::t_cf734b4f3b0e27 282
+crates/oxc_linter/src/rules.rs
+  s_2587d825ab4702::t_00efc05e02ef27 534
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "6f20bbead684f9072a052fd4d7e7a8f0af394666",
+  "prompts": {},
+  "humans": {
+    "h_54cccc4af8e4fc": {
+      "author": "sh3xu <s43khu@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_2587d825ab4702": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3148c7ca-a543-47cd-8a79-c4f0ad902f5a",
+        "model": "default"
+      },
+      "human_author": "sh3xu <s43khu@gmail.com>"
+    }
+  }
+}
