@@ -1,0 +1,14 @@
+crates/oxc_linter/src/rules/unicorn/no_return_array_push.rs
+  h_54cccc4af8e4fc 63,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "e1e2ecbc0dee7d0d6b80038b72080dd4fddab35a",
+  "prompts": {},
+  "humans": {
+    "h_54cccc4af8e4fc": {
+      "author": "sh3xu <s43khu@gmail.com>"
+    }
+  }
+}
