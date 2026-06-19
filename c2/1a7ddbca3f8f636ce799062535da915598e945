@@ -1,0 +1,19 @@
+npm/oxlint/configuration_schema.json
+  s_2587d825ab4702::t_85ccf65b2f3082 8783-8785
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "c21a7ddbca3f8f636ce799062535da915598e945",
+  "prompts": {},
+  "sessions": {
+    "s_2587d825ab4702": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3148c7ca-a543-47cd-8a79-c4f0ad902f5a",
+        "model": "default"
+      },
+      "human_author": "sh3xu <s43khu@gmail.com>"
+    }
+  }
+}
