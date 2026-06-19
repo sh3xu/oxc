@@ -1,0 +1,22 @@
+crates/oxc_linter/src/rules.rs
+  s_2587d825ab4702::t_897879b7177734 514
+crates/oxc_linter/src/rules/unicorn/no_confusing_array_with.rs
+  s_2587d825ab4702::t_bcc95c896b104a 199-200
+  s_2587d825ab4702::t_bf0d77ee62e226 1-198,201-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "e7ea076771f7c098d5533843135d569c361b0057",
+  "prompts": {},
+  "sessions": {
+    "s_2587d825ab4702": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3148c7ca-a543-47cd-8a79-c4f0ad902f5a",
+        "model": "default"
+      },
+      "human_author": "sh3xu <s43khu@gmail.com>"
+    }
+  }
+}
