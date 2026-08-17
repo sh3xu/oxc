@@ -1,0 +1,29 @@
+crates/oxc_minifier/src/peephole/fold_constants.rs
+  s_4e46c35eab1d1a::t_a4310164d79403 980,984,989-1019,1021,1024
+  s_4e46c35eab1d1a::t_60fab24dfa92f0 974-979
+crates/oxc_minifier/tests/peephole/fold_constants.rs
+  s_4e46c35eab1d1a::t_9b522b325261db 1669,1672,1675-1678
+  s_4e46c35eab1d1a::t_c423093bbbbb2c 1663-1665,1668,1671,1674,1680,1682,1691-1702
+  s_4e46c35eab1d1a::t_1fde465ecf5f3e 1666-1667,1670,1673,1679,1681
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "36f38d1fd8681c3a007a07d7437950a3aa7df85e",
+  "prompts": {},
+  "humans": {
+    "h_54cccc4af8e4fc": {
+      "author": "sh3xu <s43khu@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_4e46c35eab1d1a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "41450d3a-46eb-4fde-adea-c14e2abeecbc",
+        "model": "default"
+      },
+      "human_author": "sh3xu <s43khu@gmail.com>"
+    }
+  }
+}
