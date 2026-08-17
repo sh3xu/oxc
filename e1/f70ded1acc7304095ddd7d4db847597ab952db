@@ -1,0 +1,19 @@
+crates/oxc_minifier/tests/peephole/fold_constants.rs
+  s_4e46c35eab1d1a::t_500c459b178a73 1703-1730
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e1f70ded1acc7304095ddd7d4db847597ab952db",
+  "prompts": {},
+  "sessions": {
+    "s_4e46c35eab1d1a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "41450d3a-46eb-4fde-adea-c14e2abeecbc",
+        "model": "default"
+      },
+      "human_author": "sh3xu <s43khu@gmail.com>"
+    }
+  }
+}
