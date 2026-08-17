@@ -11,7 +11,7 @@ use oxc_diagnostics::OxcDiagnostic;
 use oxc_index::IndexSlice;
 use smallvec::smallvec;
 
-use crate::diagnostics::ErrorCategory;
+use crate::diagnostics;
 use crate::react_compiler_hir::environment::Environment;
 use crate::react_compiler_hir::visitors::{
     PlaceList, each_instruction_lvalue_ids, each_instruction_value_operand, each_terminal_operand,
@@ -47,18 +47,12 @@ pub fn validate_locals_not_reassigned_after_render(func: &HirFunction, env: &mut
     // Then record the top-level reassignment error if any
     if let Some(reassignment_place) = reassignment {
         let variable_name = format_variable_name(&reassignment_place, &env.identifiers);
-        env.record_diagnostic(
-            ErrorCategory::Immutability
-                .diagnostic("Cannot reassign variable after render completes")
-                .with_help(format!(
-                    "Reassigning {} after render has completed can cause inconsistent \
-                     behavior on subsequent renders. Consider using state instead",
-                    variable_name
-                ))
-                .with_labels(reassignment_place.span.map(|s| {
-                    s.label(format!("Cannot reassign {} after render completes", variable_name))
-                })),
-        );
+        let declaration_span = env.identifiers[reassignment_place.identifier].span;
+        env.record_diagnostic(diagnostics::reassigned_after_render(
+            &variable_name,
+            reassignment_place.span,
+            declaration_span,
+        ));
     }
 }
 
@@ -122,7 +116,7 @@ fn get_context_reassignment(
                             if let Some(reassignment_place) =
                                 reassigning_functions.get(&context_place.identifier)
                             {
-                                reassignment = Some(reassignment_place.clone());
+                                reassignment = Some(*reassignment_place);
                                 break;
                             }
                         }
@@ -134,41 +128,32 @@ fn get_context_reassignment(
                             // Async functions that reassign get an immediate error
                             let variable_name =
                                 format_variable_name(reassignment_place, identifiers);
-                            diagnostics.push(
-                                ErrorCategory::Immutability
-                                    .diagnostic("Cannot reassign variable in async function")
-                                    .with_help(
-                                        "Reassigning a variable in an async function can cause \
-                                         inconsistent behavior on subsequent renders. \
-                                         Consider using state instead",
-                                    )
-                                    .with_labels(reassignment_place.span.map(|s| {
-                                        s.label(format!("Cannot reassign {}", variable_name))
-                                    })),
-                            );
+                            diagnostics.push(diagnostics::reassigned_in_async_function(
+                                &variable_name,
+                                reassignment_place.span,
+                                identifiers[reassignment_place.identifier].span,
+                            ));
                             // Return null (don't propagate further) — matches TS behavior
                             return None;
                         } else {
                             // Propagate reassignment info on the lvalue
                             reassigning_functions
-                                .insert(instr.lvalue.identifier, reassignment_place.clone());
+                                .insert(instr.lvalue.identifier, *reassignment_place);
                         }
                     }
                 }
 
                 InstructionValue::StoreLocal { lvalue, value, .. } => {
                     if let Some(reassignment_place) = reassigning_functions.get(&value.identifier) {
-                        let reassignment_place = reassignment_place.clone();
-                        reassigning_functions
-                            .insert(lvalue.place.identifier, reassignment_place.clone());
+                        let reassignment_place = *reassignment_place;
+                        reassigning_functions.insert(lvalue.place.identifier, reassignment_place);
                         reassigning_functions.insert(instr.lvalue.identifier, reassignment_place);
                     }
                 }
 
                 InstructionValue::LoadLocal { place, .. } => {
                     if let Some(reassignment_place) = reassigning_functions.get(&place.identifier) {
-                        reassigning_functions
-                            .insert(instr.lvalue.identifier, reassignment_place.clone());
+                        reassigning_functions.insert(instr.lvalue.identifier, *reassignment_place);
                     }
                 }
 
@@ -184,7 +169,7 @@ fn get_context_reassignment(
                     if is_function_expression
                         && context_variables.contains(&lvalue.place.identifier)
                     {
-                        return Some(lvalue.place.clone());
+                        return Some(lvalue.place);
                     }
 
                     // In the outer function, track context variables
@@ -194,9 +179,8 @@ fn get_context_reassignment(
 
                     // Propagate reassigning function info through StoreContext
                     if let Some(reassignment_place) = reassigning_functions.get(&value.identifier) {
-                        let reassignment_place = reassignment_place.clone();
-                        reassigning_functions
-                            .insert(lvalue.place.identifier, reassignment_place.clone());
+                        let reassignment_place = *reassignment_place;
+                        reassigning_functions.insert(lvalue.place.identifier, reassignment_place);
                         reassigning_functions.insert(instr.lvalue.identifier, reassignment_place);
                     }
                 }
@@ -208,21 +192,21 @@ fn get_context_reassignment(
                     let operands: PlaceList = match &instr.value {
                         InstructionValue::CallExpression { callee, .. } => {
                             if env.has_no_alias_signature(callee.identifier) {
-                                smallvec![callee.clone()]
+                                smallvec![*callee]
                             } else {
                                 each_instruction_value_operand(&instr.value, env)
                             }
                         }
                         InstructionValue::MethodCall { receiver, property, .. } => {
                             if env.has_no_alias_signature(property.identifier) {
-                                smallvec![receiver.clone(), property.clone()]
+                                smallvec![*receiver, *property]
                             } else {
                                 each_instruction_value_operand(&instr.value, env)
                             }
                         }
                         InstructionValue::TaggedTemplateExpression { tag, .. } => {
                             if env.has_no_alias_signature(tag.identifier) {
-                                smallvec![tag.clone()]
+                                smallvec![*tag]
                             } else {
                                 each_instruction_value_operand(&instr.value, env)
                             }
@@ -249,8 +233,7 @@ fn get_context_reassignment(
                                 // If the operand is not frozen but does reassign, then the
                                 // lvalues of the instruction could also be reassigning
                                 for lvalue_id in each_instruction_lvalue_ids(instr) {
-                                    reassigning_functions
-                                        .insert(lvalue_id, reassignment_place.clone());
+                                    reassigning_functions.insert(lvalue_id, reassignment_place);
                                 }
                             }
                         }
@@ -262,7 +245,7 @@ fn get_context_reassignment(
         // Check terminal operands for reassigning functions
         for operand in each_terminal_operand(&block.terminal) {
             if let Some(reassignment_place) = reassigning_functions.get(&operand.identifier) {
-                return Some(reassignment_place.clone());
+                return Some(*reassignment_place);
             }
         }
     }

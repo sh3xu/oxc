@@ -1,5 +1,7 @@
 # externals/webawesome/popup/popup.ts
 
+> Union broken out of its `:`/`as` position: Prettier retries the whole union flat on the indented next line, we expand to leading-`|` members right away. Core oxc_formatter (plain `.ts` too), not embed-specific
+
 ## Option 1
 
 `````json
@@ -51,19 +53,6 @@
    /** Syncs the popup's width or height to that of the anchor element. */
    @property() sync: "width" | "height" | "both";
  
-@@ -663,9 +669,11 @@
-           "popup-has-arrow": this.arrow,
-         })}
-       >
-         <slot></slot>
--        ${this.arrow ? html`<div part="arrow" class="arrow" role="presentation"></div>` : ""}
-+        ${this.arrow
-+          ? html`<div part="arrow" class="arrow" role="presentation"></div>`
-+          : ""}
-       </div>
-     `;
-   }
- }
 
 `````
 
@@ -742,9 +731,7 @@ export default class WaPopup extends WebAwesomeElement {
         })}
       >
         <slot></slot>
-        ${this.arrow
-          ? html`<div part="arrow" class="arrow" role="presentation"></div>`
-          : ""}
+        ${this.arrow ? html`<div part="arrow" class="arrow" role="presentation"></div>` : ""}
       </div>
     `;
   }
@@ -1467,27 +1454,6 @@ declare global {
    /**
     * The amount of padding between the arrow and the edges of the popup. If the popup has a border-radius, for example,
     * this will prevent it from overflowing the corners.
-@@ -616,15 +619,13 @@
-           "popup-has-arrow": this.arrow,
-         })}
-       >
-         <slot></slot>
--        ${
--          this.arrow
--            ? html`
--                <div part="arrow" class="arrow" role="presentation"></div>
--              `
--            : ""
--        }
-+        ${this.arrow
-+          ? html`
-+              <div part="arrow" class="arrow" role="presentation"></div>
-+            `
-+          : ""}
-       </div>
-     `;
-   }
- }
 
 `````
 
@@ -2116,11 +2082,13 @@ export default class WaPopup extends WebAwesomeElement {
         })}
       >
         <slot></slot>
-        ${this.arrow
-          ? html`
-              <div part="arrow" class="arrow" role="presentation"></div>
-            `
-          : ""}
+        ${
+          this.arrow
+            ? html`
+                <div part="arrow" class="arrow" role="presentation"></div>
+              `
+            : ""
+        }
       </div>
     `;
   }

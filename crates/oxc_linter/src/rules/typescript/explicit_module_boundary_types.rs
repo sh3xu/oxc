@@ -174,27 +174,22 @@ declare_oxc_lint!(
 
 impl Rule for ExplicitModuleBoundaryTypes {
     fn from_configuration(value: Value) -> Result<Self, serde_json::error::Error> {
-        serde_json::from_value::<DefaultRuleConfig<Self>>(value).map(DefaultRuleConfig::into_inner)
+        DefaultRuleConfig::<Self>::from_value(value).map(DefaultRuleConfig::into_inner)
     }
 
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
         match node.kind() {
             // look for `export function foo() { ... }`, `export const foo = () => { ... }`,
             // etc.
+            AstKind::ExportDeclaration(export) => {
+                let mut checker = ExplicitTypesChecker::new(self, ctx);
+                walk_js::walk_declaration(&mut checker, &export.declaration);
+            }
             AstKind::ExportNamedDeclaration(export) => {
-                // export { foo } from 'bar';
-                if export.source.is_some() {
-                    return;
-                }
-                if let Some(decl) = &export.declaration {
-                    let mut checker = ExplicitTypesChecker::new(self, ctx);
-                    walk_js::walk_declaration(&mut checker, decl);
-                } else {
-                    let mut checker = ExplicitTypesChecker::new(self, ctx);
-                    for specifier in &export.specifiers {
-                        if let ModuleExportName::IdentifierReference(id) = &specifier.local {
-                            Self::run_on_identifier_reference(ctx, id, &mut checker);
-                        }
+                let mut checker = ExplicitTypesChecker::new(self, ctx);
+                for specifier in &export.specifiers {
+                    if let ModuleExportName::IdentifierReference(id) = &specifier.local {
+                        Self::run_on_identifier_reference(ctx, id, &mut checker);
                     }
                 }
             }
@@ -509,7 +504,7 @@ impl<'a, 'c> ExplicitTypesChecker<'a, 'c> {
             return;
         }
 
-        if arrow.expression {
+        if arrow.is_expression() {
             let Some(expr) = arrow.get_expression() else {
                 debug_assert!(
                     false,
@@ -535,7 +530,7 @@ impl<'a, 'c> ExplicitTypesChecker<'a, 'c> {
                     // `export const foo = () => () => (): number => 1`
                     Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {
                         debug_assert!(self.rule.allow_higher_order_functions);
-                        walk_js::walk_function_body(self, &arrow.body);
+                        walk_js::walk_arrow_function_body(self, &arrow.body);
                         return;
                     }
                     _ => {
@@ -545,7 +540,7 @@ impl<'a, 'c> ExplicitTypesChecker<'a, 'c> {
                 }
             }
         } else {
-            walk_js::walk_function_body(self, &arrow.body);
+            walk_js::walk_arrow_function_body(self, &arrow.body);
 
             // AST is immutable in linter, so `unstable_address` produces stable `Address`es
             let is_hof = self.is_higher_order_function(arrow.unstable_address());

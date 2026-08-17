@@ -1,5 +1,7 @@
 # externals/webawesome/textarea/textarea.ts
 
+> Union broken out of its `:`/`as` position: Prettier retries the whole union flat on the indented next line, we expand to leading-`|` members right away. Core oxc_formatter (plain `.ts` too), not embed-specific
+
 ## Option 1
 
 `````json
@@ -90,51 +92,6 @@
    /** Enables spell checking on the textarea. */
    @property({
      type: Boolean,
-@@ -457,9 +481,12 @@
-         <textarea
-           part="textarea"
-           id="input"
-           class="control"
--          title=${this.title /* An empty title prevents browser validation tooltips from appearing on hover */}
-+          title=${
-+            this
-+              .title /* An empty title prevents browser validation tooltips from appearing on hover */
-+          }
-           name=${ifDefined(this.name)}
-           .value=${live(this.value)}
-           ?disabled=${this.disabled}
-           ?readonly=${this.readonly}
-@@ -504,20 +531,18 @@
-           })}
-           >${this.hint}</slot
-         >
- 
--        ${
--          this.withCount
--            ? html`
--                <div part="count" class="count" aria-hidden="true">
--                  ${countText}
--                </div>
--                <div class="wa-visually-hidden-force" aria-live="polite">
--                  ${this.announcedCountText}
--                </div>
--              `
--            : ""
--        }
-+        ${this.withCount
-+          ? html`
-+              <div part="count" class="count" aria-hidden="true">
-+                ${countText}
-+              </div>
-+              <div class="wa-visually-hidden-force" aria-live="polite">
-+                ${this.announcedCountText}
-+              </div>
-+            `
-+          : ""}
-       </div>
-     `;
-   }
- }
 
 `````
 
@@ -625,10 +582,7 @@ export default class WaTextarea extends WebAwesomeFormAssociatedElement {
           part="textarea"
           id="input"
           class="control"
-          title=${
-            this
-              .title /* An empty title prevents browser validation tooltips from appearing on hover */
-          }
+          title=${this.title /* An empty title prevents browser validation tooltips from appearing on hover */}
           name=${ifDefined(this.name)}
           .value=${live(this.value)}
           ?disabled=${this.disabled}
@@ -675,16 +629,18 @@ export default class WaTextarea extends WebAwesomeFormAssociatedElement {
           >${this.hint}</slot
         >
 
-        ${this.withCount
-          ? html`
-              <div part="count" class="count" aria-hidden="true">
-                ${countText}
-              </div>
-              <div class="wa-visually-hidden-force" aria-live="polite">
-                ${this.announcedCountText}
-              </div>
-            `
-          : ""}
+        ${
+          this.withCount
+            ? html`
+                <div part="count" class="count" aria-hidden="true">
+                  ${countText}
+                </div>
+                <div class="wa-visually-hidden-force" aria-live="polite">
+                  ${this.announcedCountText}
+                </div>
+              `
+            : ""
+        }
       </div>
     `;
   }
@@ -1275,47 +1231,6 @@ declare global {
    /**
     * Only required for SSR. Set to `true` if you're slotting in a `label` element so the server-rendered markup
     * includes the label before the component hydrates on the client.
-@@ -420,9 +427,12 @@
-         <textarea
-           part="textarea"
-           id="input"
-           class="control"
--          title=${this.title /* An empty title prevents browser validation tooltips from appearing on hover */}
-+          title=${
-+            this
-+              .title /* An empty title prevents browser validation tooltips from appearing on hover */
-+          }
-           name=${ifDefined(this.name)}
-           .value=${live(this.value)}
-           ?disabled=${this.disabled}
-           ?readonly=${this.readonly}
-@@ -464,18 +474,16 @@
-         >
-           ${this.hint}
-         </slot>
- 
--        ${
--          this.withCount
--            ? html`
--                <div part="count" class="count" aria-hidden="true">${countText}</div>
--                <div class="wa-visually-hidden-force" aria-live="polite">
--                  ${this.announcedCountText}
--                </div>
--              `
--            : ""
--        }
-+        ${this.withCount
-+          ? html`
-+              <div part="count" class="count" aria-hidden="true">${countText}</div>
-+              <div class="wa-visually-hidden-force" aria-live="polite">
-+                ${this.announcedCountText}
-+              </div>
-+            `
-+          : ""}
-       </div>
-     `;
-   }
- }
 
 `````
 
@@ -1752,10 +1667,7 @@ export default class WaTextarea extends WebAwesomeFormAssociatedElement {
           part="textarea"
           id="input"
           class="control"
-          title=${
-            this
-              .title /* An empty title prevents browser validation tooltips from appearing on hover */
-          }
+          title=${this.title /* An empty title prevents browser validation tooltips from appearing on hover */}
           name=${ifDefined(this.name)}
           .value=${live(this.value)}
           ?disabled=${this.disabled}
@@ -1799,14 +1711,16 @@ export default class WaTextarea extends WebAwesomeFormAssociatedElement {
           ${this.hint}
         </slot>
 
-        ${this.withCount
-          ? html`
-              <div part="count" class="count" aria-hidden="true">${countText}</div>
-              <div class="wa-visually-hidden-force" aria-live="polite">
-                ${this.announcedCountText}
-              </div>
-            `
-          : ""}
+        ${
+          this.withCount
+            ? html`
+                <div part="count" class="count" aria-hidden="true">${countText}</div>
+                <div class="wa-visually-hidden-force" aria-live="polite">
+                  ${this.announcedCountText}
+                </div>
+              `
+            : ""
+        }
       </div>
     `;
   }

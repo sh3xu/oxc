@@ -107,8 +107,8 @@ export type MaxDependenciesConfigJson = number | MaxDependenciesConfig;
 export type Target = "single" | "any";
 export type TestCaseName = "it" | "test";
 export type JestFnType = "hook" | "describe" | "test" | "expect" | "jest" | "unknown";
-export type DummyRule = AllowWarnDeny | [AllowWarnDeny, ...unknown[]];
 export type SnapshotHintMode = "always" | "multi";
+export type DummyRule = AllowWarnDeny | [AllowWarnDeny, ...unknown[]];
 export type AltTextElements = "img" | "object" | "area" | 'input[type="image"]';
 export type AnchorIsValidAspect = "noHref" | "invalidHref" | "preferButton";
 export type Assert = "htmlFor" | "nesting" | "both" | "either";
@@ -149,6 +149,8 @@ export type NoInnerDeclarationsConfig = "functions" | "both";
 export type BlockScopedFunctions = "allow" | "disallow";
 export type Namespaces = "allow" | "disallow";
 export type NoMagicNumbersNumber = number | string;
+export type NoRestrictedGlobalsConfigEnum = string | RestrictedGlobal | NoRestrictedGlobalsObjectConfig;
+export type GlobalNameOrObject = string | RestrictedGlobal;
 export type NoRestrictedImportsConfigEnum = string | RestrictedPath | NoRestrictedImportsConfig;
 export type PossiblePaths = string | RestrictedPath;
 export type PossiblePatterns = string | RestrictedPattern;
@@ -171,6 +173,7 @@ export type Location = "start" | "anywhere";
  * The rule takes a single option - an array of possible callback names - which may include object methods. The default callback names are `callback`, `cb`, `next`.
  */
 export type CallbackReturn = string[];
+export type ExportsStyleMode = "module.exports" | "exports";
 /**
  * The rule takes a single string option: the name of the error parameter.
  *
@@ -186,6 +189,18 @@ export type CallbackReturn = string[];
 export type HandleCallbackErrConfig = string;
 export type NoMixedRequiresConfig = boolean | NoMixedRequiresOptions;
 export type ShorthandType = "always" | "methods" | "properties" | "consistent" | "consistent-as-needed" | "never";
+/**
+ * Enforces consistent grouping of variable declarations.
+ */
+export type OneVar = OneVarConfig;
+/**
+ * Configuration accepted by the `one-var` rule.
+ */
+export type OneVarConfig = OneVarMode | OneVarOptions;
+/**
+ * Controls how variable declarators are grouped into declarations.
+ */
+export type OneVarMode = "always" | "never" | "consecutive";
 export type Destructuring = "any" | "all";
 export type PreferDestructuringOption = PreferDestructuringTargetOption | PreferDestructuringAssignmentConfig;
 export type TerminationMethod = string | string[];
@@ -235,12 +250,7 @@ export type ImportKind = "none" | "all" | "multiple" | "single";
 export type SortOrder = "desc" | "asc";
 export type ArrayOption = "array" | "array-simple" | "generic";
 export type ReadonlyArrayOption = "array" | "array-simple" | "generic";
-export type DirectiveConfigSchema =
-  | boolean
-  | RequireDescription
-  | {
-      descriptionFormat?: string;
-    };
+export type DirectiveConfigSchema = boolean | RequireDescription | DescriptionFormatConfig;
 export type RequireDescription = "allow-with-description";
 export type ClassLiteralPropertyStyleOption = "fields" | "getters";
 export type PreferGenericType = "constructor" | "type-annotation";
@@ -537,9 +547,23 @@ export interface Oxlintrc {
    */
   env?: OxlintEnv;
   /**
-   * Paths of configuration files that this configuration file extends (inherits from). The files
-   * are resolved relative to the location of the configuration file that contains the `extends`
-   * property. The configuration files are merged from the first to the last, with the last file
+   * Configurations that this configuration file extends (inherits from).
+   *
+   * In `.oxlintrc.json`, `extends` has type `string[]`. Each string is a path to a configuration
+   * file, resolved relative to the location of the configuration file that contains the
+   * `extends` property.
+   *
+   * In `oxlint.config.ts`, `extends` has type `OxlintConfig[]`. Import each configuration and
+   * pass the configuration object directly:
+   *
+   * ```ts
+   * import { defineConfig } from "oxlint";
+   * import baseConfig from "./base-config.ts";
+   *
+   * export default defineConfig({ extends: [baseConfig] });
+   * ```
+   *
+   * Configurations are merged from the first to the last, with the last configuration
    * overriding the previous ones.
    */
   extends?: string[];
@@ -901,6 +925,7 @@ export interface DummyRuleMap {
   "grouped-accessor-pairs"?:
     RuleNoConfig | [AllowWarnDeny, PairOrder] | [AllowWarnDeny, PairOrder, GroupedAccessorPairsConfig];
   "guard-for-in"?: RuleNoConfig;
+  "id-denylist"?: RuleNoConfig | [AllowWarnDeny, string, ...string[]];
   "id-length"?: RuleNoConfig | [AllowWarnDeny, IdLengthConfig];
   "id-match"?: RuleNoConfig | [AllowWarnDeny, string] | [AllowWarnDeny, string, IdMatchOptions];
   "import/consistent-type-specifier-style"?: RuleNoConfig | [AllowWarnDeny, Mode];
@@ -986,7 +1011,7 @@ export interface DummyRuleMap {
   "jest/prefer-hooks-on-top"?: RuleNoConfig;
   "jest/prefer-importing-jest-globals"?: RuleNoConfig | [AllowWarnDeny, PreferImportingJestGlobalsConfig];
   "jest/prefer-jest-mocked"?: RuleNoConfig;
-  "jest/prefer-lowercase-title"?: DummyRule;
+  "jest/prefer-lowercase-title"?: RuleNoConfig | [AllowWarnDeny, PreferLowercaseTitleConfig];
   "jest/prefer-mock-promise-shorthand"?: RuleNoConfig;
   "jest/prefer-mock-return-shorthand"?: RuleNoConfig;
   "jest/prefer-snapshot-hint"?: RuleNoConfig | [AllowWarnDeny, SnapshotHintMode];
@@ -1010,6 +1035,7 @@ export interface DummyRuleMap {
   "jsdoc/check-tag-names"?: RuleNoConfig | [AllowWarnDeny, CheckTagNamesConfig];
   "jsdoc/empty-tags"?: RuleNoConfig | [AllowWarnDeny, EmptyTagsConfig];
   "jsdoc/implements-on-classes"?: RuleNoConfig;
+  "jsdoc/no-blank-blocks"?: RuleNoConfig | [AllowWarnDeny, NoBlankBlocks];
   "jsdoc/no-defaults"?: RuleNoConfig | [AllowWarnDeny, NoDefaultsConfig];
   "jsdoc/require-param"?: RuleNoConfig | [AllowWarnDeny, RequireParamConfig];
   "jsdoc/require-param-description"?: RuleNoConfig | [AllowWarnDeny, RequireParamDescriptionConfig];
@@ -1029,7 +1055,7 @@ export interface DummyRuleMap {
   "jsdoc/require-yields-type"?: RuleNoConfig;
   "jsx-a11y/alt-text"?: RuleNoConfig | [AllowWarnDeny, AltTextConfigSchema];
   "jsx-a11y/anchor-ambiguous-text"?: RuleNoConfig | [AllowWarnDeny, AnchorAmbiguousTextConfig];
-  "jsx-a11y/anchor-has-content"?: RuleNoConfig;
+  "jsx-a11y/anchor-has-content"?: RuleNoConfig | [AllowWarnDeny, AnchorHasContentConfig];
   "jsx-a11y/anchor-is-valid"?: RuleNoConfig | [AllowWarnDeny, AnchorIsValidConfig];
   "jsx-a11y/aria-activedescendant-has-tabindex"?: RuleNoConfig;
   "jsx-a11y/aria-props"?: RuleNoConfig;
@@ -1177,7 +1203,8 @@ export interface DummyRuleMap {
   "no-redeclare"?: RuleNoConfig | [AllowWarnDeny, NoRedeclare];
   "no-regex-spaces"?: RuleNoConfig;
   "no-restricted-exports"?: RuleNoConfig | [AllowWarnDeny, NoRestrictedExportsConfig];
-  "no-restricted-globals"?: DummyRule;
+  "no-restricted-globals"?:
+    RuleNoConfig | [AllowWarnDeny, NoRestrictedGlobalsConfigEnum, ...NoRestrictedGlobalsConfigEnum[]];
   "no-restricted-imports"?:
     RuleNoConfig | [AllowWarnDeny, NoRestrictedImportsConfigEnum, ...NoRestrictedImportsConfigEnum[]];
   "no-restricted-properties"?: RuleNoConfig | [AllowWarnDeny, PropertyDetails, ...PropertyDetails[]];
@@ -1223,9 +1250,11 @@ export interface DummyRuleMap {
   "no-useless-return"?: RuleNoConfig;
   "no-var"?: RuleNoConfig;
   "no-void"?: RuleNoConfig | [AllowWarnDeny, NoVoid];
-  "no-warning-comments"?: RuleNoConfig | [AllowWarnDeny, NoWarningCommentsConfigJson];
+  "no-warning-comments"?: RuleNoConfig | [AllowWarnDeny, NoWarningCommentsConfig];
   "no-with"?: RuleNoConfig;
   "node/callback-return"?: RuleNoConfig | [AllowWarnDeny, CallbackReturn];
+  "node/exports-style"?:
+    RuleNoConfig | [AllowWarnDeny, ExportsStyleMode] | [AllowWarnDeny, ExportsStyleMode, ExportsStyleOptions];
   "node/global-require"?: RuleNoConfig;
   "node/handle-callback-err"?: RuleNoConfig | [AllowWarnDeny, HandleCallbackErrConfig];
   "node/no-exports-assign"?: RuleNoConfig;
@@ -1234,14 +1263,17 @@ export interface DummyRuleMap {
   "node/no-path-concat"?: RuleNoConfig;
   "node/no-process-env"?: RuleNoConfig | [AllowWarnDeny, NoProcessEnvConfig];
   "node/no-sync"?: RuleNoConfig | [AllowWarnDeny, NoSyncConfig];
+  "node/no-top-level-await"?: RuleNoConfig | [AllowWarnDeny, NoTopLevelAwaitConfig];
   "object-shorthand"?:
     RuleNoConfig | [AllowWarnDeny, ShorthandType] | [AllowWarnDeny, ShorthandType, ObjectShorthandOptions];
+  "one-var"?: RuleNoConfig | [AllowWarnDeny, OneVar];
   "operator-assignment"?: RuleNoConfig | [AllowWarnDeny, AlwaysNever];
   "oxc/approx-constant"?: RuleNoConfig;
   "oxc/bad-array-method-on-arguments"?: RuleNoConfig;
   "oxc/bad-bitwise-operator"?: RuleNoConfig;
   "oxc/bad-char-at-comparison"?: RuleNoConfig;
   "oxc/bad-comparison-sequence"?: RuleNoConfig;
+  "oxc/bad-match-all-arg"?: RuleNoConfig;
   "oxc/bad-min-max-func"?: RuleNoConfig;
   "oxc/bad-object-literal-comparison"?: RuleNoConfig;
   "oxc/bad-replace-all-arg"?: RuleNoConfig;
@@ -1268,7 +1300,7 @@ export interface DummyRuleMap {
   "prefer-destructuring"?:
     | RuleNoConfig
     | [AllowWarnDeny, PreferDestructuringOption]
-    | [AllowWarnDeny, PreferDestructuringOption, PreferDestructuringRenamedPropertiesConfig];
+    | [AllowWarnDeny, PreferDestructuringOption, PreferDestructuringEnforcementConfig];
   "prefer-exponentiation-operator"?: RuleNoConfig;
   "prefer-named-capture-group"?: RuleNoConfig;
   "prefer-numeric-literals"?: RuleNoConfig;
@@ -1302,16 +1334,25 @@ export interface DummyRuleMap {
   "react-perf/jsx-no-new-function-as-prop"?: RuleNoConfig | [AllowWarnDeny, ReactPerfConfig];
   "react-perf/jsx-no-new-object-as-prop"?: RuleNoConfig | [AllowWarnDeny, ReactPerfConfig];
   "react/button-has-type"?: RuleNoConfig | [AllowWarnDeny, ButtonHasType];
+  "react/capitalized-calls"?: RuleNoConfig;
   "react/checked-requires-onchange-or-readonly"?: RuleNoConfig | [AllowWarnDeny, CheckedRequiresOnchangeOrReadonly];
   "react/display-name"?: RuleNoConfig | [AllowWarnDeny, DisplayNameConfig];
+  "react/error-boundaries"?: RuleNoConfig;
   "react/exhaustive-deps"?: RuleNoConfig | [AllowWarnDeny, ExhaustiveDepsConfig];
+  "react/exhaustive-effect-dependencies"?: RuleNoConfig;
   "react/forbid-component-props"?: RuleNoConfig | [AllowWarnDeny, ForbidComponentPropsConfig];
   "react/forbid-dom-props"?: RuleNoConfig | [AllowWarnDeny, ForbidDomPropsConfig];
   "react/forbid-elements"?: RuleNoConfig | [AllowWarnDeny, ForbidElementsConfig];
   "react/forward-ref-uses-ref"?: RuleNoConfig;
   "react/function-component-definition"?: RuleNoConfig | [AllowWarnDeny, FunctionComponentDefinitionConfig];
+  "react/gating"?: RuleNoConfig;
+  "react/globals"?: RuleNoConfig;
   "react/hook-use-state"?: RuleNoConfig | [AllowWarnDeny, HookUseStateConfig];
+  "react/hooks"?: RuleNoConfig;
   "react/iframe-missing-sandbox"?: RuleNoConfig;
+  "react/immutability"?: RuleNoConfig;
+  "react/incompatible-library"?: RuleNoConfig;
+  "react/invariant"?: RuleNoConfig;
   "react/jsx-boolean-value"?:
     | RuleNoConfig
     | [AllowWarnDeny, EnforceBooleanAttribute]
@@ -1339,11 +1380,13 @@ export interface DummyRuleMap {
   "react/jsx-pascal-case"?: RuleNoConfig | [AllowWarnDeny, JsxPascalCaseConfig];
   "react/jsx-props-no-spread-multi"?: RuleNoConfig;
   "react/jsx-props-no-spreading"?: RuleNoConfig | [AllowWarnDeny, JsxPropsNoSpreadingConfig];
+  "react/memo-dependencies"?: RuleNoConfig;
   "react/no-array-index-key"?: RuleNoConfig;
   "react/no-children-prop"?: RuleNoConfig;
   "react/no-clone-element"?: RuleNoConfig;
   "react/no-danger"?: RuleNoConfig;
   "react/no-danger-with-children"?: RuleNoConfig;
+  "react/no-deriving-state-in-effects"?: RuleNoConfig;
   "react/no-did-mount-set-state"?: RuleNoConfig | [AllowWarnDeny, AllowedOrDisallowInFunc];
   "react/no-did-update-set-state"?: RuleNoConfig | [AllowWarnDeny, AllowedOrDisallowInFunc];
   "react/no-direct-mutation-state"?: RuleNoConfig;
@@ -1366,14 +1409,25 @@ export interface DummyRuleMap {
   "react/only-export-components"?: RuleNoConfig | [AllowWarnDeny, OnlyExportComponentsConfig];
   "react/prefer-es6-class"?: RuleNoConfig | [AllowWarnDeny, AlwaysNever];
   "react/prefer-function-component"?: RuleNoConfig | [AllowWarnDeny, PreferFunctionComponent];
-  "react/react-compiler"?: RuleNoConfig | [AllowWarnDeny, ReactCompilerConfig];
+  "react/preserve-manual-memoization"?: RuleNoConfig;
+  "react/purity"?: RuleNoConfig;
   "react/react-in-jsx-scope"?: RuleNoConfig;
+  "react/refs"?: RuleNoConfig;
   "react/require-render-return"?: RuleNoConfig;
+  "react/rule-suppression"?: RuleNoConfig;
   "react/rules-of-hooks"?: RuleNoConfig;
   "react/self-closing-comp"?: RuleNoConfig | [AllowWarnDeny, SelfClosingComp];
+  "react/set-state-in-effect"?: RuleNoConfig;
+  "react/set-state-in-render"?: RuleNoConfig;
   "react/state-in-constructor"?: RuleNoConfig | [AllowWarnDeny, AlwaysNever];
+  "react/static-components"?: RuleNoConfig;
   "react/style-prop-object"?: RuleNoConfig | [AllowWarnDeny, StylePropObjectConfig];
+  "react/syntax"?: RuleNoConfig;
+  "react/todo"?: RuleNoConfig;
+  "react/unsupported-syntax"?: RuleNoConfig;
+  "react/use-memo"?: RuleNoConfig;
   "react/void-dom-elements-no-children"?: RuleNoConfig;
+  "react/void-use-memo"?: RuleNoConfig;
   "require-await"?: RuleNoConfig;
   "require-unicode-regexp"?: RuleNoConfig | [AllowWarnDeny, RequireUnicodeRegexpConfig];
   "require-yield"?: RuleNoConfig;
@@ -1680,7 +1734,7 @@ export interface DummyRuleMap {
   "vitest/prefer-hooks-on-top"?: RuleNoConfig;
   "vitest/prefer-import-in-mock"?: RuleNoConfig | [AllowWarnDeny, PreferImportInMockConfig];
   "vitest/prefer-importing-vitest-globals"?: RuleNoConfig;
-  "vitest/prefer-lowercase-title"?: DummyRule;
+  "vitest/prefer-lowercase-title"?: RuleNoConfig | [AllowWarnDeny, PreferLowercaseTitleConfig];
   "vitest/prefer-mock-promise-shorthand"?: RuleNoConfig;
   "vitest/prefer-mock-return-shorthand"?: RuleNoConfig;
   "vitest/prefer-snapshot-hint"?: RuleNoConfig | [AllowWarnDeny, SnapshotHintMode];
@@ -2352,7 +2406,8 @@ export interface NoHooksConfig {
 export interface NoLargeSnapshotsConfig {
   /**
    * A map of snapshot file paths to arrays of snapshot names that are allowed to exceed the size limit.
-   * Snapshot names can be specified as regular expressions.
+   * Each snapshot name is interpreted as a Rust regular expression. If it is not a valid regular
+   * expression, it is matched as an exact literal string instead.
    */
   allowedSnapshots?: {
     [k: string]: string[] | undefined;
@@ -2399,6 +2454,96 @@ export interface PreferImportingJestGlobalsConfig {
    * Jest function types to enforce importing for.
    */
   types?: JestFnType[];
+}
+export interface PreferLowercaseTitleConfig {
+  /**
+   * This array option allows specifying prefixes, which contain capitals that titles
+   * can start with. This can be useful when writing tests for API endpoints, where
+   * you'd like to prefix with the HTTP method.
+   * By default, nothing is allowed (the equivalent of `{ "allowedPrefixes": [] }`).
+   *
+   * Example of **correct** code for the `{ "allowedPrefixes": ["GET"] }` option:
+   * ```js
+   * /* jest/prefer-lowercase-title: ["error", { "allowedPrefixes": ["GET"] }] * /
+   * describe('GET /live');
+   * ```
+   */
+  allowedPrefixes?: string[];
+  /**
+   * This array option controls which Jest or Vitest functions are checked by this rule. There
+   * are four possible values:
+   * - `"describe"`
+   * - `"test"`
+   * - `"it"`
+   * - `"bench"`
+   *
+   * By default, none of these options are enabled (the equivalent of
+   * `{ "ignore": [] }`).
+   *
+   * Example of **correct** code for the `{ "ignore": ["describe"] }` option:
+   * ```js
+   * /* jest/prefer-lowercase-title: ["error", { "ignore": ["describe"] }] * /
+   * describe('Uppercase description');
+   * ```
+   *
+   * Example of **correct** code for the `{ "ignore": ["test"] }` option:
+   * ```js
+   * /* jest/prefer-lowercase-title: ["error", { "ignore": ["test"] }] * /
+   * test('Uppercase description');
+   * ```
+   *
+   * Example of **correct** code for the `{ "ignore": ["it"] }` option:
+   * ```js
+   * /* jest/prefer-lowercase-title: ["error", { "ignore": ["it"] }] * /
+   * it('Uppercase description');
+   * ```
+   */
+  ignore?: string[];
+  /**
+   * This option can be set to allow only the top-level `describe` blocks to have a
+   * title starting with an upper-case letter.
+   *
+   * Example of **correct** code for the `{ "ignoreTopLevelDescribe": true }` option:
+   * ```js
+   * /* jest/prefer-lowercase-title: ["error", { "ignoreTopLevelDescribe": true }] * /
+   * describe('MyClass', () => {
+   * describe('#myMethod', () => {
+   * it('does things', () => {
+   * //
+   * });
+   * });
+   * });
+   * ```
+   */
+  ignoreTopLevelDescribe?: boolean;
+  /**
+   * This option can be set to only validate that the first character of a test name is lowercased.
+   *
+   * Example of **correct** code for the `{ "lowercaseFirstCharacterOnly": true }` option:
+   * ```js
+   * /* vitest/prefer-lowercase-title: ["error", { "lowercaseFirstCharacterOnly": true }] * /
+   * describe('myClass', () => {
+   * describe('myMethod', () => {
+   * it('does things', () => {
+   * //
+   * });
+   * });
+   * });
+   * ```
+   *
+   * Example of **incorrect** code for the `{ "lowercaseFirstCharacterOnly": true }` option:
+   * ```js
+   * /* vitest/prefer-lowercase-title: ["error", { "lowercaseFirstCharacterOnly": true }] * /
+   * describe('MyClass', () => {
+   * describe('MyMethod', () => {
+   * it('does things', () => {
+   * //
+   * });
+   * });
+   * });
+   * ```
+   */
+  lowercaseFirstCharacterOnly?: boolean;
 }
 export interface RequireHookConfig {
   /**
@@ -2453,6 +2598,12 @@ export interface EmptyTagsConfig {
    * Additional tags to check for their descriptions.
    */
   tags?: string[];
+}
+export interface NoBlankBlocks {
+  /**
+   * Whether to automatically remove blank JSDoc blocks.
+   */
+  enableFixer?: boolean;
 }
 export interface NoDefaultsConfig {
   /**
@@ -2595,6 +2746,12 @@ export interface AnchorAmbiguousTextConfig {
    * List of ambiguous words or phrases that should be flagged in anchor text.
    */
   words?: string[];
+}
+export interface AnchorHasContentConfig {
+  /**
+   * Additional custom component names to treat as anchor elements.
+   */
+  components?: string[];
 }
 export interface AnchorIsValidConfig {
   /**
@@ -3483,6 +3640,38 @@ export interface RestrictDefaultExports {
    */
   namespaceFrom?: boolean;
 }
+/**
+ * A restricted global with an optional custom message.
+ */
+export interface RestrictedGlobal {
+  /**
+   * A custom message shown when the restricted global is used.
+   */
+  message?: string;
+  /**
+   * The name of the restricted global.
+   */
+  name: string;
+}
+/**
+ * Object form of the configuration, which additionally allows detecting
+ * restricted globals accessed via global objects.
+ */
+export interface NoRestrictedGlobalsObjectConfig {
+  /**
+   * Whether to also detect restricted globals accessed via global objects. Default is `false`.
+   */
+  checkGlobalObject?: boolean;
+  /**
+   * Additional global object names to check when `checkGlobalObject` is enabled.
+   * By default, the rule checks these global objects: `globalThis`, `self`, and `window`.
+   */
+  globalObjects?: string[];
+  /**
+   * The restricted globals, as names or `{ "name", "message" }` objects.
+   */
+  globals: GlobalNameOrObject[];
+}
 export interface RestrictedPath {
   allowImportNames?: string[];
   allowTypeImports?: boolean;
@@ -3694,10 +3883,10 @@ export interface NoUnusedVarsOptions {
    * Specifies exceptions to this rule for unused arguments. Arguments whose
    * names match this pattern will be ignored.
    *
-   * By default, this pattern is `^_` unless options are configured with an
-   * object. In this case it will default to [`None`]. Note that this
-   * behavior deviates from both ESLint and TypeScript-ESLint, which never
-   * provide a default pattern.
+   * By default, names starting with `_` are ignored, except for the bare `_`
+   * parameter. If options are configured with an object, this will default
+   * to [`None`]. Note that this behavior deviates from both ESLint and
+   * TypeScript-ESLint, which never provide a default pattern.
    *
    * #### Example
    *
@@ -4021,10 +4210,27 @@ export interface NoVoid {
    */
   allowAsStatement?: boolean;
 }
-export interface NoWarningCommentsConfigJson {
+export interface NoWarningCommentsConfig {
+  /**
+   * An array of characters to ignore at the start of comments when `location` is `"start"`.
+   *
+   * Useful for ignoring common comment decorations like `*` in JSDoc-style comments.
+   */
   decoration?: string[];
+  /**
+   * Where to check for the terms.
+   */
   location?: Location;
+  /**
+   * An array of terms to match. The matching is case-insensitive.
+   */
   terms?: string[];
+}
+export interface ExportsStyleOptions {
+  /**
+   * If this option is set to `true`, `module.exports = exports = obj` are allowed.
+   */
+  allowBatchAssign?: boolean;
 }
 export interface NoMixedRequiresOptions {
   allowCall?: boolean;
@@ -4046,11 +4252,59 @@ export interface NoSyncConfig {
    */
   ignores?: string[];
 }
+export interface NoTopLevelAwaitConfig {
+  /**
+   * If `true`, top-level `await` is allowed in files that start with a
+   * hashbang (`#!`), which marks them as executable scripts rather than
+   * importable modules.
+   */
+  ignoreBin?: boolean;
+}
 export interface ObjectShorthandOptions {
   avoidExplicitReturnArrows?: boolean;
   avoidQuotes?: boolean;
   ignoreConstructors?: boolean;
   methodsIgnorePattern?: string;
+}
+/**
+ * Options for configuring declaration grouping by kind or initialization state.
+ *
+ * `initialized` and `uninitialized` take precedence over the per-kind option for the
+ * corresponding declarators.
+ */
+export interface OneVarOptions {
+  /**
+   * Controls grouping for `await using` declarations.
+   */
+  awaitUsing?: OneVarMode;
+  /**
+   * Controls grouping for `const` declarations.
+   */
+  const?: OneVarMode;
+  /**
+   * Controls grouping for initialized declarators, overriding per-kind options.
+   */
+  initialized?: OneVarMode;
+  /**
+   * Controls grouping for `let` declarations.
+   */
+  let?: OneVarMode;
+  /**
+   * Keeps direct `require(...)` initializers separate from other initialized declarations.
+   */
+  separateRequires?: boolean;
+  /**
+   * Controls grouping for uninitialized declarators, overriding per-kind options.
+   */
+  uninitialized?: OneVarMode;
+  /**
+   * Controls grouping for `using` declarations.
+   */
+  using?: OneVarMode;
+  /**
+   * Controls grouping for `var` declarations.
+   */
+  var?: OneVarMode;
 }
 export interface NoAsyncEndpointHandlersConfig {
   /**
@@ -4148,7 +4402,8 @@ export interface PreferDestructuringAssignmentConfig {
   AssignmentExpression?: PreferDestructuringTargetOption;
   VariableDeclarator?: PreferDestructuringTargetOption;
 }
-export interface PreferDestructuringRenamedPropertiesConfig {
+export interface PreferDestructuringEnforcementConfig {
+  enforceForDeclarationWithTypeAnnotation?: boolean;
   enforceForRenamedProperties?: boolean;
 }
 export interface PreferPromiseRejectErrors {
@@ -4883,15 +5138,6 @@ export interface PreferFunctionComponent {
    */
   allowJsxUtilityClass?: boolean;
 }
-export interface ReactCompilerConfig {
-  /**
-   * Also report compiler bail-outs — places where React Compiler skipped a
-   * component or hook (for example because of unsupported syntax) without
-   * finding a rule violation. These do not indicate incorrect code, only
-   * code that the compiler declined to optimize.
-   */
-  reportAllBailouts?: boolean;
-}
 export interface SelfClosingComp {
   /**
    * Whether to enforce self-closing for custom components.
@@ -5046,6 +5292,9 @@ export interface BanTsCommentConfig {
    * How to handle the `@ts-nocheck` directive.
    */
   "ts-nocheck"?: DirectiveConfigSchema;
+}
+export interface DescriptionFormatConfig {
+  descriptionFormat?: string;
 }
 export interface ConsistentReturnConfig {
   /**
@@ -5599,12 +5848,30 @@ export interface NoUnnecessaryBooleanLiteralCompareConfig {
 }
 export interface NoUnnecessaryConditionConfig {
   /**
-   * Whether to allow constant loop conditions.
-   * `true` is treated as `"always"`, `false` as `"never"`.
+   * Controls which constant conditions are allowed in `while`, `do...while`, and `for` loops.
+   *
+   * - `"never"` (or `false`) reports all constant loop conditions.
+   * - `"always"` (or `true`) allows conditions whose type is the literal type `true`, such as
+   * `while (true)` or `while (variable)` when `variable` has type `true`.
+   * - `"only-allowed-literals"` allows only the literal expressions `true`, `false`, `0`, and
+   * `1`. Variables whose types are those literal types are still reported.
    */
   allowConstantLoopConditions?: AllowConstantLoopConditions;
   /**
-   * Whether to check type predicate functions.
+   * Whether to check arguments passed to type predicate and assertion functions.
+   *
+   * When enabled, the rule reports a call if the argument already satisfies the predicate or
+   * if an assertion function receives an argument that is always truthy or always falsy.
+   *
+   * For example, `narrow(value)` is unnecessary because `value` already has type `true`:
+   *
+   * ```ts
+   * declare const narrow: (value: unknown) => value is true;
+   * const value = true;
+   * if (narrow(value)) {
+   * // ...
+   * }
+   * ```
    */
   checkTypePredicates?: boolean;
 }

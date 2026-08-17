@@ -75,7 +75,7 @@ fn is_sentinel_node(ast_kind: AstKind) -> bool {
 
 impl Rule for NoReturnAssign {
     fn from_configuration(value: Value) -> Result<Self, serde_json::error::Error> {
-        serde_json::from_value::<DefaultRuleConfig<Self>>(value).map(DefaultRuleConfig::into_inner)
+        DefaultRuleConfig::<Self>::from_value(value).map(DefaultRuleConfig::into_inner)
     }
 
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
@@ -105,7 +105,7 @@ impl Rule for NoReturnAssign {
                     "Return statements should not contain an assignment.",
                 ));
             }
-            AstKind::ArrowFunctionExpression(arrow) if arrow.expression => {
+            AstKind::ArrowFunctionExpression(arrow) if arrow.is_expression() => {
                 ctx.diagnostic(no_return_assign_diagnostic(
                     assign.span(),
                     "Arrow functions should not return an assignment.",

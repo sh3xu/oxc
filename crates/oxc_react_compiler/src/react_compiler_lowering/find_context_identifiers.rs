@@ -38,7 +38,7 @@ use oxc_diagnostics::OxcDiagnostic;
 use oxc_span::Span;
 use oxc_syntax::scope::ScopeFlags;
 
-use crate::diagnostics::ErrorCategory;
+use crate::diagnostics;
 use crate::scope::ScopeId;
 use crate::scope::ScopeResolver;
 use crate::scope::SymbolId;
@@ -135,7 +135,10 @@ impl<'a> ContextIdentifierVisitor<'a> {
         if self.error.is_some() {
             return;
         }
-        self.error = Some(make_unsupported_lval_error(type_name, Some(span)));
+        self.error = Some(diagnostics::unsupported_object_destructuring_assignment_target(
+            type_name,
+            Some(span),
+        ));
     }
 }
 
@@ -292,7 +295,9 @@ impl<'a> VisitJs<'a> for ContextIdentifierVisitor<'a> {
 
     fn visit_ts_enum_declaration(&mut self, _it: &TSEnumDeclaration<'a>) {}
 
-    fn visit_ts_module_declaration(&mut self, _it: &TSModuleDeclaration<'a>) {}
+    fn visit_ts_external_module_declaration(&mut self, _it: &TSExternalModuleDeclaration<'a>) {}
+
+    fn visit_ts_namespace_declaration(&mut self, _it: &TSNamespaceDeclaration<'a>) {}
 }
 
 impl<'a> ContextIdentifierVisitor<'a> {
@@ -370,20 +375,6 @@ impl<'a> ContextIdentifierVisitor<'a> {
     }
 }
 
-/// Build the TS-faithful Todo error for an unsupported assignment-target wrapper
-/// node, mirroring the TypeScript `FindContextIdentifiers` pass. TS throws
-/// immediately (CompilerError.throwTodo in handleAssignment's default case),
-/// aborting before BuildHIR ever runs or logs, so this must return Err rather
-/// than record-and-continue: otherwise Rust emits HIR debug entries for a
-/// function TS never lowered.
-fn make_unsupported_lval_error(type_name: &str, span: Option<Span>) -> OxcDiagnostic {
-    ErrorCategory::Todo
-        .diagnostic(format!(
-            "[FindContextIdentifiers] Cannot handle Object destructuring assignment target {type_name}"
-        ))
-        .with_labels(span)
-}
-
 /// Check if a binding declared at `binding_scope` is captured by a function at `function_scope`.
 /// Returns true if the binding is declared above the function (in the parent scope or higher).
 fn is_captured_by_function(
@@ -431,15 +422,7 @@ pub fn find_context_identifiers(
         }
         FunctionNode::Arrow(arrow) => {
             visitor.visit_formal_parameters(&arrow.params);
-            if arrow.expression {
-                if let Some(Statement::ExpressionStatement(es)) = arrow.body.statements.first() {
-                    visitor.visit_expression(&es.expression);
-                } else {
-                    visitor.visit_function_body(&arrow.body);
-                }
-            } else {
-                visitor.visit_function_body(&arrow.body);
-            }
+            visitor.visit_arrow_function_body(&arrow.body);
         }
     }
 

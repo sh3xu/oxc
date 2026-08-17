@@ -1,11 +1,12 @@
-use crate::diagnostics::ErrorCategory;
+use crate::diagnostics;
 use crate::react_compiler_hir::environment::Environment;
 use crate::react_compiler_hir::visitors::each_terminal_successor;
 use crate::react_compiler_hir::visitors::terminal_fallthrough;
 use crate::react_compiler_hir::*;
 use crate::react_compiler_utils::FxIndexMap;
-use crate::react_compiler_utils::FxIndexSet;
 use crate::react_compiler_utils::IdentIndexMap;
+use crate::react_compiler_utils::OrderedMap;
+use crate::react_compiler_utils::ordered_map::ArenaOrderedSet;
 use crate::scope::DeclKind;
 use crate::scope::ImportBindingKind;
 use crate::scope::ScopeId;
@@ -13,6 +14,7 @@ use crate::scope::ScopeResolver;
 use crate::scope::SymbolId;
 use rustc_hash::FxHashSet;
 
+use oxc_allocator::{Allocator, CloneIn, Vec as ArenaVec};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_span::Span;
 use oxc_str::{Ident, format_ident};
@@ -20,7 +22,12 @@ use oxc_str::{Ident, format_ident};
 use crate::react_compiler_lowering::identifier_loc_index::IdentifierLocIndex;
 
 type BuildResult<'a> = Result<
-    (HIR, Vec<Instruction<'a>>, IdentIndexMap<'a, SymbolId>, FxIndexMap<SymbolId, IdentifierId>),
+    (
+        HIR<'a>,
+        Vec<Instruction<'a>>,
+        IdentIndexMap<'a, SymbolId>,
+        FxIndexMap<SymbolId, IdentifierId>,
+    ),
     OxcDiagnostic,
 >;
 
@@ -70,13 +77,6 @@ pub(crate) fn is_always_reserved_word(s: &str) -> bool {
     )
 }
 
-pub(crate) fn reserved_identifier_diagnostic(name: &str) -> OxcDiagnostic {
-    ErrorCategory::Syntax.diagnostic("Expected a non-reserved identifier name").with_help(format!(
-        "`{}` is a reserved word in JavaScript and cannot be used as an identifier name",
-        name
-    ))
-}
-
 // ---------------------------------------------------------------------------
 // Scope types for tracking break/continue targets
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ fn new_block(id: BlockId, kind: BlockKind) -> WipBlock {
 // ---------------------------------------------------------------------------
 
 pub struct HirBuilder<'a, 'b> {
-    completed: FxIndexMap<BlockId, BasicBlock>,
+    completed: OrderedMap<BlockId, BasicBlock<'a>>,
     current: WipBlock,
     entry: BlockId,
     scopes: Vec<Scope<'a>>,
@@ -185,7 +185,7 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
         let entry = env.next_block_id();
         let kind = entry_block_kind.unwrap_or(BlockKind::Block);
         HirBuilder {
-            completed: FxIndexMap::default(),
+            completed: OrderedMap::default(),
             current: new_block(entry, kind),
             entry,
             scopes: Vec::new(),
@@ -337,16 +337,17 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
     /// Kept non-generic (and out-of-line) so the block-completion machinery compiles
     /// once instead of being duplicated into every generic `try_enter*` instantiation.
     #[inline(never)]
-    fn complete_block(&mut self, wip: WipBlock, terminal: Terminal) {
+    fn complete_block(&mut self, wip: WipBlock, terminal: Terminal<'a>) {
+        let alloc = self.env.allocator;
         self.completed.insert(
             wip.id,
             BasicBlock {
                 kind: wip.kind,
                 id: wip.id,
-                instructions: wip.instructions,
+                instructions: ArenaVec::from_iter_in(wip.instructions, &alloc),
                 terminal,
-                preds: FxIndexSet::default(),
-                phis: Vec::new(),
+                preds: ArenaOrderedSet::new_in(alloc),
+                phis: ArenaVec::new_in(&alloc),
             },
         );
     }
@@ -355,7 +356,11 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
     ///
     /// If `next_block_kind` is `Some`, a new current block is created with that kind.
     /// Returns the BlockId of the completed block.
-    pub fn terminate(&mut self, terminal: Terminal, next_block_kind: Option<BlockKind>) -> BlockId {
+    pub fn terminate(
+        &mut self,
+        terminal: Terminal<'a>,
+        next_block_kind: Option<BlockKind>,
+    ) -> BlockId {
         // The placeholder block created here (`BlockId::PLACEHOLDER`) is only used when
         // next_block_kind is None, meaning this is the final terminate() call.
         // It will never be read or completed because build() consumes self
@@ -375,7 +380,7 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
 
     /// Terminate the current block with the given terminal, and set
     /// a previously reserved block as the new current block.
-    pub fn terminate_with_continuation(&mut self, terminal: Terminal, continuation: WipBlock) {
+    pub fn terminate_with_continuation(&mut self, terminal: Terminal<'a>, continuation: WipBlock) {
         let wip = std::mem::replace(&mut self.current, continuation);
         self.complete_block(wip, terminal);
     }
@@ -392,7 +397,7 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
     pub fn try_enter_reserved(
         &mut self,
         wip: WipBlock,
-        f: impl FnOnce(&mut Self) -> Result<Terminal, OxcDiagnostic>,
+        f: impl FnOnce(&mut Self) -> Result<Terminal<'a>, OxcDiagnostic>,
     ) -> Result<(), OxcDiagnostic> {
         let prev = std::mem::replace(&mut self.current, wip);
         let terminal = f(self)?;
@@ -405,7 +410,7 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
     pub fn try_enter(
         &mut self,
         kind: BlockKind,
-        f: impl FnOnce(&mut Self, BlockId) -> Result<Terminal, OxcDiagnostic>,
+        f: impl FnOnce(&mut Self, BlockId) -> Result<Terminal<'a>, OxcDiagnostic>,
     ) -> Result<BlockId, OxcDiagnostic> {
         let wip = self.reserve(kind);
         let wip_id = wip.id;
@@ -449,8 +454,7 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
                 );
             }
             _ => {
-                return Err(ErrorCategory::Invariant
-                    .diagnostic("Mismatched loop scope: expected Loop, got other"));
+                return Err(diagnostics::invariant_mismatched_loop_scope_expected_loop_got_other());
             }
         }
         Ok(value)
@@ -471,8 +475,9 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
                 assert!(*l == label && *b == break_block, "Mismatched label scope");
             }
             _ => {
-                return Err(ErrorCategory::Invariant
-                    .diagnostic("Mismatched label scope: expected Label, got other"));
+                return Err(
+                    diagnostics::invariant_mismatched_label_scope_expected_label_got_other(),
+                );
             }
         }
         Ok(value)
@@ -493,8 +498,9 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
                 assert!(*l == label && *b == break_block, "Mismatched switch scope");
             }
             _ => {
-                return Err(ErrorCategory::Invariant
-                    .diagnostic("Mismatched switch scope: expected Switch, got other"));
+                return Err(
+                    diagnostics::invariant_mismatched_switch_scope_expected_switch_got_other(),
+                );
             }
         }
         Ok(value)
@@ -514,8 +520,7 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
                 _ => continue,
             }
         }
-        Err(ErrorCategory::Invariant
-            .diagnostic("Expected a loop or switch to be in scope for break"))
+        Err(diagnostics::invariant_expected_loop_or_switch_scope_break())
     }
 
     /// Look up the continue target for the given label (or the innermost
@@ -530,13 +535,12 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
                 }
                 _ => {
                     if label.is_some() && scope.label() == label {
-                        return Err(ErrorCategory::Invariant
-                            .diagnostic("Continue may only refer to a labeled loop"));
+                        return Err(diagnostics::invariant_continue_may_only_refer_labeled_loop());
                     }
                 }
             }
         }
-        Err(ErrorCategory::Invariant.diagnostic("Expected a loop to be in scope for continue"))
+        Err(diagnostics::invariant_expected_loop_scope_continue())
     }
 
     /// Create a temporary identifier with a fresh id, returning its IdentifierId.
@@ -589,7 +593,7 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
 
         let mut instructions = std::mem::take(&mut self.instruction_table);
 
-        let rpo_blocks = get_reverse_postordered_blocks(&hir);
+        let rpo_blocks = get_reverse_postordered_blocks(&hir, self.env.allocator);
 
         // Check for unreachable blocks that contain FunctionExpression instructions.
         // These could contain hoisted declarations that we can't safely remove.
@@ -604,13 +608,26 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
                 if has_function_expr {
                     let span = block
                         .instructions
-                        .first()
-                        .and_then(|&i| instructions[i.index()].span)
+                        .iter()
+                        .find_map(|&instruction_id| {
+                            let instruction = &instructions[instruction_id.index()];
+                            if let InstructionValue::FunctionExpression {
+                                name_span,
+                                lowered_func,
+                                span,
+                                ..
+                            } = &instruction.value
+                            {
+                                name_span
+                                    .or(self.env.functions[lowered_func.func].diagnostic_span())
+                                    .or(*span)
+                            } else {
+                                None
+                            }
+                        })
                         .or_else(|| block.terminal.span().copied());
                     self.env.record_error(
-                        ErrorCategory::Todo
-                            .diagnostic("Support functions with unreachable code that may contain hoisted declarations")
-                            .with_labels(span),
+                        diagnostics::todo_support_functions_unreachable_code_that_may_contain_hoisted_declarations(span),
                     )?;
                 }
             }
@@ -673,12 +690,7 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
                 };
             if should_record_fbt_error {
                 let error_span = self.declaration_span(symbol_id).or(span);
-                self.env.record_error(
-                    ErrorCategory::Todo
-                        .diagnostic("Support local variables named `fbt`")
-                        .with_help("Local variables named `fbt` may conflict with the fbt plugin and are not yet supported")
-                        .with_labels(error_span),
-                )?;
+                self.env.record_error(diagnostics::local_fbt_variable(error_span))?;
             }
         }
 
@@ -689,7 +701,7 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
 
         if is_always_reserved_word(name.as_str()) {
             // Match TS behavior: makeIdentifierName throws for reserved words.
-            return Err(reserved_identifier_diagnostic(name.as_str()));
+            return Err(diagnostics::reserved_identifier(name.as_str(), span));
         }
 
         // Find a unique name: start with the original name, then try name_0, name_1, ...
@@ -755,11 +767,10 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
             // No binding found: this is a global
             return Ok(VariableBinding::Global { name });
         };
-        // Treat type-only declarations as globals so the compiler
-        // doesn't try to create/initialize HIR bindings for them.
-        // TSEnumDeclaration is included because a function with an inline
-        // enum is skipped (`skip_compilation`) and the enum binding is
-        // never initialized in HIR.
+        // Treat type-only declarations as globals so the compiler doesn't try to
+        // create or initialize HIR bindings for them. Inline enums are opaque
+        // pass-through instructions, matching upstream's `UnsupportedNode`, so
+        // their references also remain global from HIR's perspective.
         if matches!(
             self.scope.decl_kind(symbol_id),
             DeclKind::TSTypeAliasDeclaration
@@ -890,14 +901,17 @@ impl<'a, 'b> HirBuilder<'a, 'b> {
 /// Blocks not reachable through successors are removed. Blocks that are
 /// only reachable as fallthroughs (not through real successor edges) are
 /// replaced with empty blocks that have an Unreachable terminal.
-pub fn get_reverse_postordered_blocks(hir: &HIR) -> FxIndexMap<BlockId, BasicBlock> {
+pub fn get_reverse_postordered_blocks<'a>(
+    hir: &HIR<'a>,
+    alloc: &'a Allocator,
+) -> OrderedMap<BlockId, BasicBlock<'a>> {
     let mut visited: FxHashSet<BlockId> = FxHashSet::default();
     let mut used: FxHashSet<BlockId> = FxHashSet::default();
     let mut used_fallthroughs: FxHashSet<BlockId> = FxHashSet::default();
     let mut postorder: Vec<BlockId> = Vec::new();
 
     fn visit(
-        hir: &HIR,
+        hir: &HIR<'_>,
         block_id: BlockId,
         is_used: bool,
         visited: &mut FxHashSet<BlockId>,
@@ -946,24 +960,24 @@ pub fn get_reverse_postordered_blocks(hir: &HIR) -> FxIndexMap<BlockId, BasicBlo
 
     visit(hir, hir.entry, true, &mut visited, &mut used, &mut used_fallthroughs, &mut postorder);
 
-    let mut blocks = FxIndexMap::default();
+    let mut blocks = OrderedMap::default();
     for block_id in postorder.into_iter().rev() {
         let block = hir.blocks.get(&block_id).unwrap();
         if used.contains(&block_id) {
-            blocks.insert(block_id, block.clone());
+            blocks.insert(block_id, block.clone_in(alloc));
         } else if used_fallthroughs.contains(&block_id) {
             blocks.insert(
                 block_id,
                 BasicBlock {
                     kind: block.kind,
                     id: block_id,
-                    instructions: Vec::new(),
+                    instructions: ArenaVec::new_in(&alloc),
                     terminal: Terminal::Unreachable {
                         id: block.terminal.evaluation_order(),
                         span: block.terminal.span().copied(),
                     },
-                    preds: block.preds.clone(),
-                    phis: Vec::new(),
+                    preds: block.preds.clone_in(alloc),
+                    phis: ArenaVec::new_in(&alloc),
                 },
             );
         }

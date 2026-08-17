@@ -140,6 +140,12 @@ pub(super) fn write_top_level_value<'a>(
     }
 }
 
+/// A paren-delimited map/list value or key: hugs the colon and carries
+/// its own break layout (Prettier's `value-paren_group` checks).
+fn is_paren_block(value: &ComponentValue<'_>) -> bool {
+    matches!(value, ComponentValue::SassMap(_) | ComponentValue::SassParenthesizedExpression(_))
+}
+
 /// `(key: value, ...)`: SCSS maps in map-item positions always break,
 /// one item per line, with a trailing comma per the `trailingComma` option.
 pub(super) fn write_sass_map<'a>(
@@ -251,7 +257,6 @@ pub(super) fn write_sass_map<'a>(
     let body = format_with(move |f: &mut CssFormatter<'_, 'a>| {
         write!(f, hard_line_break());
         let source = f.context().source_text();
-        let mut last_item_block_with_comment = false;
         let mut first_item_has_leading_comment = false;
         for (i, item) in map.items.iter().enumerate() {
             if i > 0 {
@@ -277,10 +282,7 @@ pub(super) fn write_sass_map<'a>(
                 ValueContext { map_key: false, paren_break: true, map_break: true, ..ctx };
             // Nested maps / paren lists hug the colon (`key: (`);
             // the pair never breaks after the colon (Prettier dedents these).
-            let value_is_block = matches!(
-                item.value,
-                ComponentValue::SassMap(_) | ComponentValue::SassParenthesizedExpression(_)
-            );
+            let value_is_block = is_paren_block(&item.value);
 
             // Comments between items:
             // block comments join the item when the pair fits on one line (Prettier's fill);
@@ -304,17 +306,7 @@ pub(super) fn write_sass_map<'a>(
             if i == 0 {
                 first_item_has_leading_comment = had_leading_comment;
             }
-            let key_is_block = matches!(
-                item.key,
-                ComponentValue::SassMap(_) | ComponentValue::SassParenthesizedExpression(_)
-            );
-            if i + 1 == map.items.len() {
-                // Suppressed only when the source ALSO had a trailing comma
-                // (the comment lands inside the last comma_group in postcss).
-                last_item_block_with_comment = value_is_block
-                    && had_leading_comment
-                    && map.comma_spans.len() >= map.items.len();
-            }
+            let key_is_block = is_paren_block(&item.key);
             if key_is_block && !value_is_block {
                 // Block keys never break before their value (`): "v",`).
                 value::write_component_value(&item.key, key_ctx, f);
@@ -323,17 +315,18 @@ pub(super) fn write_sass_map<'a>(
             } else if value_is_block {
                 value::write_component_value(&item.key, key_ctx, f);
                 write!(f, [":", space()]);
-                // A paren/map KEY (or a leading comment, or nesting) keeps the pair's indent on the value
-                // (Prettier's dedent applies only when the doc is a plain `group(indent(fill))`).
-                let needs_indent =
-                    key_is_block || had_leading_comment || f.context().block_depth().get() > 0;
-                if needs_indent {
-                    let body = format_with(move |f: &mut CssFormatter<'_, 'a>| {
-                        write_top_level_value(&item.value, val_ctx, f);
-                    });
+                let body = format_with(move |f: &mut CssFormatter<'_, 'a>| {
+                    write_top_level_value(&item.value, val_ctx, f);
+                });
+                // Prettier's dedent applies only when the pair doc is a plain `group(indent(fill))`;
+                // a paren/map KEY changes that shape, so it keeps the pair's indent on the value.
+                // NOTE: two more dedent skips are deliberately NOT matched here (see "Known divergences" in AGENTS.md):
+                // - LEADING COMMENT (also changes the doc shape; trivia must not change layout)
+                // - `@if`/`@each`/... ancestor (an explicit prettier#16607 crash-guard, not doc shape: SAME source, different indent per context)
+                if key_is_block {
                     write!(f, indent(&body));
                 } else {
-                    write_top_level_value(&item.value, val_ctx, f);
+                    write!(f, body);
                 }
             } else {
                 // `key: value` breaks after the colon when too long
@@ -341,11 +334,7 @@ pub(super) fn write_sass_map<'a>(
                     let mut filler = f.fill();
                     let key = format_with(move |f: &mut CssFormatter<'_, 'a>| {
                         // Paren/map keys cancel the pair indent (Prettier's `isKey` → dedent)
-                        if matches!(
-                            item.key,
-                            ComponentValue::SassMap(_)
-                                | ComponentValue::SassParenthesizedExpression(_)
-                        ) {
+                        if key_is_block {
                             let inner = format_with(move |f: &mut CssFormatter<'_, 'a>| {
                                 value::write_component_value(&item.key, key_ctx, f);
                             });
@@ -373,15 +362,12 @@ pub(super) fn write_sass_map<'a>(
             .comments()
             .iter_before(r_paren)
             .any(|c| c.span.start >= last_item_end && value::comment_is_own_line(c, source));
-        // Prettier drops the trailing comma after a comment-preceded block value
-        // (the pair doc isn't the plain dedent shape).
-        // A comment before the FIRST item also drops it:
+        // A comment before the FIRST item drops the trailing comma:
         // the comment becomes `groups[0]` of the paren group,
-        // so `isKeyValuePairInParenGroupNode` no longer sees a key-value pair
-        // and the group stops being an SCSS map item.
-        let printed_comma =
-            (trailing && !last_item_block_with_comment && !first_item_has_leading_comment)
-                || has_ownline_tail;
+        // so `isKeyValuePairInParenGroupNode` no longer sees a key-value pair and the group stops being an SCSS map item.
+        // A comment before a LATER item never does
+        // (Prettier keeps the comma there whether or not the source had one — required for idempotency).
+        let printed_comma = (trailing && !first_item_has_leading_comment) || has_ownline_tail;
         if printed_comma {
             write!(f, ",");
         }
@@ -992,6 +978,9 @@ fn write_sass_module_config<'a>(config: &SassModuleConfig<'a>, f: &mut CssFormat
 /// content (`$a: 1 /* c */,`); an own-line comment stops the loop and stays pending.
 /// Inline `//` comments ride a `line_suffix`,
 /// so a following `,` lands before the comment text (Prettier prints `$a: 1, // c`).
+/// Look-alike of `comments::write_trailing_same_line_comments`, minus its `expand_parent`:
+/// the map/config bodies this serves already hard-break,
+/// so propagating a break out of a still-flat head (`@use "a" /* c */ with (`) would be a behavior change.
 /// Returns the end offset of the last emitted comment.
 fn write_same_line_trailing_comments<'a>(
     upper_bound: u32,

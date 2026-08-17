@@ -1,14 +1,16 @@
-use std::mem::{replace, take};
+use std::mem::replace;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use oxc_allocator::{Allocator, Vec as ArenaVec};
 use oxc_diagnostics::OxcDiagnostic;
 
-use crate::diagnostics::ErrorCategory;
+use crate::diagnostics;
 use crate::react_compiler_hir::environment::Environment;
 use crate::react_compiler_hir::visitors;
 use crate::react_compiler_hir::*;
-use crate::react_compiler_utils::FxIndexMap;
+use crate::react_compiler_utils::OrderedMap;
+use crate::react_compiler_utils::ordered_map::ArenaOrderedMap;
 
 // =============================================================================
 // SSABuilder
@@ -24,19 +26,19 @@ struct State {
     incomplete_phis: Vec<IncompletePhi>,
 }
 
-struct SSABuilder {
+struct SSABuilder<'a> {
     states: FxHashMap<BlockId, State>,
     current: Option<BlockId>,
     unsealed_preds: FxHashMap<BlockId, u32>,
     block_preds: FxHashMap<BlockId, Vec<BlockId>>,
     unknown: FxHashSet<IdentifierId>,
     context: FxHashSet<IdentifierId>,
-    pending_phis: FxHashMap<BlockId, Vec<Phi>>,
+    pending_phis: FxHashMap<BlockId, Vec<Phi<'a>>>,
     processed_functions: Vec<FunctionId>,
 }
 
-impl SSABuilder {
-    fn new(blocks: &FxIndexMap<BlockId, BasicBlock>) -> Self {
+impl<'a> SSABuilder<'a> {
+    fn new(blocks: &OrderedMap<BlockId, BasicBlock<'a>>) -> Self {
         let mut block_preds = FxHashMap::default();
         for (id, block) in blocks {
             block_preds.insert(*id, block.preds.iter().copied().collect());
@@ -53,7 +55,7 @@ impl SSABuilder {
         }
     }
 
-    fn define_function(&mut self, func: &HirFunction) {
+    fn define_function(&mut self, func: &HirFunction<'a>) {
         for (id, block) in &func.body.blocks {
             self.block_preds.insert(*id, block.preds.iter().copied().collect());
         }
@@ -64,7 +66,7 @@ impl SSABuilder {
         self.states.get_mut(&current).expect("state not found for current block")
     }
 
-    fn make_id(&mut self, old_id: IdentifierId, env: &mut Environment) -> IdentifierId {
+    fn make_id(&mut self, old_id: IdentifierId, env: &mut Environment<'a>) -> IdentifierId {
         let new_id = env.next_identifier_id();
         let old = &env.identifiers[old_id];
         let declaration_id = old.declaration_id;
@@ -80,7 +82,7 @@ impl SSABuilder {
     fn define_place(
         &mut self,
         old_place: &Place,
-        env: &mut Environment,
+        env: &mut Environment<'a>,
     ) -> Result<Place, OxcDiagnostic> {
         let old_id = old_place.identifier;
 
@@ -90,12 +92,7 @@ impl SSABuilder {
                 Some(name) => format!("{}${}", name.value(), old_id.index()),
                 None => format!("${}", old_id.index()),
             };
-            return Err(ErrorCategory::Todo
-                .diagnostic(
-                    "[hoisting] EnterSSA: Expected identifier to be defined before being used",
-                )
-                .with_help(format!("Identifier {} is undefined", name))
-                .with_labels(old_place.span));
+            return Err(diagnostics::undefined_ssa_identifier(&name, old_place.span));
         }
 
         // Do not redefine context references.
@@ -125,7 +122,7 @@ impl SSABuilder {
         self.unknown.remove(&id);
     }
 
-    fn get_place(&mut self, old_place: &Place, env: &mut Environment) -> Place {
+    fn get_place(&mut self, old_place: &Place, env: &mut Environment<'a>) -> Place {
         let current_id = self.current.expect("must be in a block");
         let new_id = self.get_id_at(old_place, current_id, env);
         Place {
@@ -140,7 +137,7 @@ impl SSABuilder {
         &mut self,
         old_place: &Place,
         block_id: BlockId,
-        env: &mut Environment,
+        env: &mut Environment<'a>,
     ) -> IdentifierId {
         if let Some(state) = self.states.get(&block_id)
             && let Some(&new_id) = state.defs.get(&old_place.identifier)
@@ -165,7 +162,7 @@ impl SSABuilder {
                 span: old_place.span,
             };
             let state = self.states.get_mut(&block_id).unwrap();
-            state.incomplete_phis.push(IncompletePhi { old_place: old_place.clone(), new_place });
+            state.incomplete_phis.push(IncompletePhi { old_place: *old_place, new_place });
             state.defs.insert(old_place.identifier, new_id);
             return new_id;
         }
@@ -194,11 +191,12 @@ impl SSABuilder {
         block_id: BlockId,
         old_place: &Place,
         new_place: &Place,
-        env: &mut Environment,
+        env: &mut Environment<'a>,
     ) {
         let preds = self.block_preds.get(&block_id).cloned().unwrap_or_default();
 
-        let mut pred_defs: FxIndexMap<BlockId, Place> = FxIndexMap::default();
+        let mut pred_defs: ArenaOrderedMap<'a, BlockId, Place> =
+            ArenaOrderedMap::new_in(env.allocator);
         for pred_block_id in &preds {
             let pred_id = self.get_id_at(old_place, *pred_block_id, env);
             pred_defs.insert(
@@ -212,12 +210,12 @@ impl SSABuilder {
             );
         }
 
-        let phi = Phi { place: new_place.clone(), operands: pred_defs };
+        let phi = Phi { place: *new_place, operands: pred_defs };
 
         self.pending_phis.entry(block_id).or_default().push(phi);
     }
 
-    fn fix_incomplete_phis(&mut self, block_id: BlockId, env: &mut Environment) {
+    fn fix_incomplete_phis(&mut self, block_id: BlockId, env: &mut Environment<'a>) {
         let incomplete_phis: Vec<IncompletePhi> =
             self.states.get_mut(&block_id).unwrap().incomplete_phis.drain(..).collect();
         for phi in &incomplete_phis {
@@ -236,7 +234,10 @@ impl SSABuilder {
 // Public entry point
 // =============================================================================
 
-pub fn enter_ssa(func: &mut HirFunction, env: &mut Environment) -> Result<(), OxcDiagnostic> {
+pub fn enter_ssa<'a>(
+    func: &mut HirFunction<'a>,
+    env: &mut Environment<'a>,
+) -> Result<(), OxcDiagnostic> {
     let mut builder = SSABuilder::new(&func.body.blocks);
     let root_entry = func.body.entry;
     enter_ssa_impl(func, &mut builder, env, root_entry)?;
@@ -247,7 +248,11 @@ pub fn enter_ssa(func: &mut HirFunction, env: &mut Environment) -> Result<(), Ox
     Ok(())
 }
 
-fn apply_pending_phis(func: &mut HirFunction, env: &mut Environment, builder: &mut SSABuilder) {
+fn apply_pending_phis<'a>(
+    func: &mut HirFunction<'a>,
+    env: &mut Environment<'a>,
+    builder: &mut SSABuilder<'a>,
+) {
     for (block_id, block) in func.body.blocks.iter_mut() {
         if let Some(phis) = builder.pending_phis.remove(block_id) {
             block.phis.extend(phis);
@@ -263,10 +268,10 @@ fn apply_pending_phis(func: &mut HirFunction, env: &mut Environment, builder: &m
     }
 }
 
-fn enter_ssa_impl(
-    func: &mut HirFunction,
-    builder: &mut SSABuilder,
-    env: &mut Environment,
+fn enter_ssa_impl<'a>(
+    func: &mut HirFunction<'a>,
+    builder: &mut SSABuilder<'a>,
+    env: &mut Environment<'a>,
     root_entry: BlockId,
 ) -> Result<(), OxcDiagnostic> {
     let mut visited_blocks: FxHashSet<BlockId> = FxHashSet::default();
@@ -276,8 +281,7 @@ fn enter_ssa_impl(
         let block_id = *block_id;
 
         if visited_blocks.contains(&block_id) {
-            return Err(ErrorCategory::Invariant
-                .diagnostic(format!("found a cycle! visiting bb{} again", block_id.index())));
+            return Err(diagnostics::enter_ssa_cycle(block_id.index()));
         }
 
         visited_blocks.insert(block_id);
@@ -286,17 +290,20 @@ fn enter_ssa_impl(
         // Handle params at the root entry
         if block_id == root_entry {
             if !func.context.is_empty() {
-                return Err(ErrorCategory::Invariant.diagnostic(
-                    "Expected function context to be empty for outer function declarations",
-                ));
+                return Err(diagnostics::invariant_expected_function_context_empty_outer_function_declarations());
             }
-            let params = take(&mut func.params);
-            let mut new_params = Vec::with_capacity(params.len());
+            let alloc = env.allocator;
+            if let Some(self_binding) = func.self_binding {
+                func.self_binding = Some(builder.define_place(&self_binding, env)?);
+            }
+            let params = replace(&mut func.params, ArenaVec::new_in(&alloc));
+            let mut new_params = ArenaVec::with_capacity_in(params.len(), &alloc);
             for param in params {
                 new_params.push(match param {
                     ParamPattern::Place(p) => ParamPattern::Place(builder.define_place(&p, env)?),
                     ParamPattern::Spread(s) => ParamPattern::Spread(SpreadPattern {
                         place: builder.define_place(&s.place, env)?,
+                        span: s.span,
                     }),
                 });
             }
@@ -305,7 +312,7 @@ fn enter_ssa_impl(
 
         // Process instructions
         let instruction_ids: Vec<InstructionId> =
-            func.body.blocks.get(&block_id).unwrap().instructions.clone();
+            func.body.blocks.get(&block_id).unwrap().instructions.iter().copied().collect();
 
         for instr_id in &instruction_ids {
             let instr_idx = instr_id.index();
@@ -323,9 +330,13 @@ fn enter_ssa_impl(
 
             // Map context places for function expressions before other operands
             if let Some(fid) = func_expr_id {
-                let context = take(&mut env.functions[fid].context);
-                env.functions[fid].context =
-                    context.into_iter().map(|place| builder.get_place(&place, env)).collect();
+                let alloc = env.allocator;
+                let context = replace(&mut env.functions[fid].context, ArenaVec::new_in(&alloc));
+                let new_context = ArenaVec::from_iter_in(
+                    context.into_iter().map(|place| builder.get_place(&place, env)),
+                    &alloc,
+                );
+                env.functions[fid].context = new_context;
             }
 
             // Map non-context operands
@@ -362,9 +373,7 @@ fn enter_ssa_impl(
                 let entry_block = inner_func.body.blocks.get_mut(&inner_entry).unwrap();
 
                 if !entry_block.preds.is_empty() {
-                    return Err(ErrorCategory::Invariant.diagnostic(
-                        "Expected function expression entry block to have zero predecessors",
-                    ));
+                    return Err(diagnostics::invariant_expected_function_expression_entry_block_have_zero_predecessors());
                 }
                 entry_block.preds.insert(block_id);
 
@@ -372,9 +381,18 @@ fn enter_ssa_impl(
 
                 let saved_current = builder.current;
 
+                // A named function expression's private name is initialized at
+                // function entry, alongside its parameters.
+                if let Some(self_binding) = env.functions[fid].self_binding {
+                    env.functions[fid].self_binding =
+                        Some(builder.define_place(&self_binding, env)?);
+                }
+
                 // Map inner function params
-                let inner_params = take(&mut env.functions[fid].params);
-                let mut new_inner_params = Vec::with_capacity(inner_params.len());
+                let alloc = env.allocator;
+                let inner_params =
+                    replace(&mut env.functions[fid].params, ArenaVec::new_in(&alloc));
+                let mut new_inner_params = ArenaVec::with_capacity_in(inner_params.len(), &alloc);
                 for param in inner_params {
                     new_inner_params.push(match param {
                         ParamPattern::Place(p) => {
@@ -382,13 +400,15 @@ fn enter_ssa_impl(
                         }
                         ParamPattern::Spread(s) => ParamPattern::Spread(SpreadPattern {
                             place: builder.define_place(&s.place, env)?,
+                            span: s.span,
                         }),
                     });
                 }
                 env.functions[fid].params = new_inner_params;
 
                 // Take the inner function out of the arena to process it
-                let mut inner_func = replace(&mut env.functions[fid], placeholder_function());
+                let mut inner_func =
+                    replace(&mut env.functions[fid], placeholder_function(env.allocator));
 
                 enter_ssa_impl(&mut inner_func, builder, env, root_entry)?;
 
@@ -435,25 +455,28 @@ fn enter_ssa_impl(
 /// Create a placeholder HirFunction for temporarily swapping an inner function
 /// out of `env.functions` via `std::mem::replace`. The placeholder is never
 /// read — the real function is swapped back immediately after processing.
-pub fn placeholder_function<'a>() -> HirFunction<'a> {
+pub fn placeholder_function<'a>(alloc: &'a Allocator) -> HirFunction<'a> {
     HirFunction {
         span: None,
+        body_span: None,
         id: None,
+        id_span: None,
+        self_binding: None,
         name_hint: None,
         fn_type: ReactFunctionType::Other,
-        params: Vec::new(),
+        params: ArenaVec::new_in(&alloc),
         returns: Place {
             identifier: IdentifierId::from_usize(0),
             effect: Effect::Unknown,
             reactive: false,
             span: None,
         },
-        context: Vec::new(),
-        body: HIR { entry: BlockId::ENTRY, blocks: FxIndexMap::default() },
-        instructions: Vec::new(),
+        context: ArenaVec::new_in(&alloc),
+        body: HIR { entry: BlockId::ENTRY, blocks: OrderedMap::default() },
+        instructions: ArenaVec::new_in(&alloc),
         generator: false,
         is_async: false,
-        directives: Vec::new(),
+        directives: ArenaVec::new_in(&alloc),
         aliasing_effects: None,
     }
 }

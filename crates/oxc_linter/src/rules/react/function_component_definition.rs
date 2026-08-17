@@ -102,13 +102,13 @@ declare_oxc_lint!(
     style,
     conditional_suggestion,
     config = FunctionComponentDefinition,
-    version = "next",
+    version = "1.75.0",
     short_description = "Enforce a specific function type for function components.",
 );
 
 impl Rule for FunctionComponentDefinition {
     fn from_configuration(value: serde_json::Value) -> Result<Self, serde_json::error::Error> {
-        serde_json::from_value::<DefaultRuleConfig<Self>>(value).map(DefaultRuleConfig::into_inner)
+        DefaultRuleConfig::<Self>::from_value(value).map(DefaultRuleConfig::into_inner)
     }
 
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
@@ -562,8 +562,8 @@ mod fix {
                     .return_type
                     .as_ref()
                     .map_or_else(String::new, |item| ctx.source_range(item.span).to_string()),
-                body: ctx.source_range(arrow.body.span).to_string(),
-                expression_body: arrow.expression,
+                body: ctx.source_range(arrow.body.span()).to_string(),
+                expression_body: arrow.is_expression(),
             }
         }
     }

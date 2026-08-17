@@ -87,6 +87,15 @@ fn test_remove_unused_this() {
         "export class A extends B { constructor() { class C { constructor() {} } super(); } }",
     );
 
+    // A nested class's computed key uses the outer constructor's `this`, so a
+    // bare access before `super()` must not be dropped.
+    test_same(
+        "export class A extends B { constructor() {
+            class C { [(this, f())]() {} }
+            super();
+        } }",
+    );
+
     // In all other positions `this` is always initialized and can be dropped.
     test("{ this; }", "");
     test("export class Foo { foo() { this; } }", "export class Foo { foo() {} }");
@@ -270,12 +279,12 @@ fn test_fold_sequence_expr() {
 
 #[test]
 fn test_logical_expression() {
-    test("var a; a != null && a.b()", "var a; a?.b()");
-    test("var a; a == null || a.b()", "var a; a?.b()");
+    test("v = function(a) { a != null && a.b() }", "v = function(a) { a?.b() }");
+    test("v = function(a) { a == null || a.b() }", "v = function(a) { a?.b() }");
     test_same("a != null && a.b()"); // a may have a getter
     test_same("a == null || a.b()"); // a may have a getter
-    test("var a; null != a && a.b()", "var a; a?.b()");
-    test("var a; null == a || a.b()", "var a; a?.b()");
+    test("v = function(a) { null != a && a.b() }", "v = function(a) { a?.b() }");
+    test("v = function(a) { null == a || a.b() }", "v = function(a) { a?.b() }");
 
     test("x == null && y", "x ?? y");
     test("x != null || y", "x ?? y");
@@ -298,6 +307,10 @@ fn test_logical_expression() {
     test(
         "var x = { y: {} }; x.y.z != null || (x.y = {}, x.y.z = 3)",
         "var x = { y: {} }; x.y.z ?? (x.y = {}, x.y.z = 3)",
+    );
+    test(
+        "import { x, mutate } from 'm'; x.y != null || (mutate(), x.y = 3)",
+        "import { x, mutate } from 'm'; x.y ?? (mutate(), x.y = 3)",
     );
     // Safe to transform to ??= when base object is not mutated
     test("var x = {}; x.y != null || (foo(), x.y = 3)", "var x = {}; x.y ??= (foo(), 3)");
@@ -403,26 +416,32 @@ fn test_fold_conditional_expression() {
 
 #[test]
 fn test_fold_binary_expression() {
-    test("var a, b; a === b", "var a, b;");
-    test("var a, b; a() === b", "var a, b; a()");
-    test("var a, b; a === b()", "var a, b; b()");
-    test("var a, b; a() === b()", "var a, b; a(), b()");
+    test("v = function(a, b) { a === b }", "v = function(a, b) {}");
+    test("v = function(a, b) { a() === b }", "v = function(a, b) { a() }");
+    test("v = function(a, b) { a === b() }", "v = function(a, b) { b() }");
+    test("v = function(a, b) { a() === b() }", "v = function(a, b) { a(), b() }");
 
-    test("var a, b; a !== b", "var a, b;");
-    test("var a, b; a == b", "var a, b;");
-    test("var a, b; a != b", "var a, b;");
-    test("var a, b; a < b", "var a, b;");
-    test("var a, b; a > b", "var a, b;");
-    test("var a, b; a <= b", "var a, b;");
-    test("var a, b; a >= b", "var a, b;");
+    test("v = function(a, b) { a !== b }", "v = function(a, b) {}");
+    test("v = function(a, b) { a == b }", "v = function(a, b) {}");
+    test("v = function(a, b) { a != b }", "v = function(a, b) {}");
+    test("v = function(a, b) { a < b }", "v = function(a, b) {}");
+    test("v = function(a, b) { a > b }", "v = function(a, b) {}");
+    test("v = function(a, b) { a <= b }", "v = function(a, b) {}");
+    test("v = function(a, b) { a >= b }", "v = function(a, b) {}");
 
-    test_same("var a, b; a + b");
-    test("var a, b; 'a' + b", "var a, b; '' + b");
-    test_same("var a, b; a + '' + b");
-    test("var a, b, c; 'a' + (b === c)", "var a, b, c;");
-    test("var a, b; 'a' + +b", "var a, b; '' + +b"); // can be improved to "var a, b; +b"
-    test_same("var a, b; a + ('' + b)");
-    test("var a, b, c; a + ('' + (b === c))", "var a, b, c; a + ''");
+    test_same("v = function(a, b) { a + b }");
+    test("v = function(a, b) { 'a' + b }", "v = function(a, b) { '' + b }");
+    test_same("v = function(a, b) { a + '' + b }");
+    test("v = function(a, b, c) { 'a' + (b === c) }", "v = function(a, b, c) {}");
+    test("v = function(a, b) { 'a' + +b }", "v = function(a, b) { '' + +b }"); // can be improved to `+b`
+    test_same("v = function(a, b) { a + ('' + b) }");
+    test("v = function(a, b, c) { a + ('' + (b === c)) }", "v = function(a, b, c) { a + '' }");
+}
+
+#[test]
+fn test_remove_unused_uninitialized_module_var_expression() {
+    test("var a; a != null && a.b()", "var a");
+    test("var a, b; a + b", "var a, b");
 }
 
 #[test]
@@ -901,7 +920,7 @@ fn test_property_write_side_effects() {
         &options,
     );
     // Literal non-string keys can't coerce to `"__proto__"` but are kept
-    // conservatively — see `SymbolFact::PROTO_WRITTEN` docs.
+    // conservatively — see `MemberWriteEffect::MayMutatePrototype`.
     test_options(
         "const a = {}; a[null] = 1; a.a = 1;",
         "const a = {}; a[null] = 1, a.a = 1;",
@@ -921,9 +940,10 @@ fn test_property_write_side_effects() {
 
     // `__proto__` assignment inside a hoisted function — traversal reaches the
     // function body only AFTER `obj.a = 1`, so the old per-pass tracking never saw
-    // it in time and wrongly dropped `obj.a = 1`. `PROTO_WRITTEN` is seeded by
-    // `Normalize` before the fixed-point loop, so it is caught regardless of
-    // order. `f` has an observable side effect (`g()`), so it is not tree-shaken:
+    // it in time and wrongly dropped `obj.a = 1`. `MayMutatePrototype` is
+    // recorded by `Normalize` before the fixed-point loop, so it is caught
+    // regardless of order. `f` has an observable side effect (`g()`), so it is
+    // not tree-shaken:
     // the setter really is installed when `f()` runs, and the sibling `obj.a = 1`
     // that would trigger it must survive.
     test_options(
@@ -1105,6 +1125,17 @@ fn test_drop_write_only_property_assignments_by_default() {
         ..CompressOptions::smallest()
     };
     test_same_options("function A() {} A.from = () => {};", &keep_assign);
+}
+
+#[test]
+fn test_summary_invalidation_preserves_member_write_hazard() {
+    // Both initializers keep the dense fresh-value kind intact. Clearing the
+    // function summary by removing its shared metadata entry would lose the
+    // `||=` hazard and incorrectly drop `foo.x = 1`.
+    test_smallest(
+        "var foo = function() {}; var foo = function() {}; foo.x = 1; foo.x ||= send();",
+        "var foo = function() {}, foo = function() {}; foo.x = 1, foo.x ||= send();",
+    );
 }
 
 #[test]
